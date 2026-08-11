@@ -1,0 +1,49 @@
+# Python generated files
+__pycache__/
+*.py[oc]
+*.py[cod]
+build/
+dist/
+*.egg-info/
+*$py.class
+
+# Virtual environment
+.venv/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Editor environment
+.vscode/
+.DS_Store
+
+# Test environment
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local environment variables
+.env
+.env.*
+
+# Raw TSA scanner data (NDA secret)
+data/raw/
+data/cache/
+*.aps
+*.a3d
+*.a3daps
+*.ahi
+
+# Test Outputs
+outputs/
+runs/
+wandb/
+*.pt
+*.pth
+*.ckpt
+
+# Logs and temporary files
+*.log
+*.tmp
