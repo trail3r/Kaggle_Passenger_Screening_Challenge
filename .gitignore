@@ -14,8 +14,11 @@ dist/
 .ipynb_checkpoints/
 
 # Editor environment
-.vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/settings.json
 .DS_Store
+Thumbs.db
 
 # Test environment
 .pytest_cache/
@@ -28,15 +31,25 @@ htmlcov/
 .env
 .env.*
 
-# Raw TSA scanner data (NDA secret)
-data/raw/
-data/cache/
+# Kaggle competition data and derived datasets
+data/*
+!data/manifests/
+!data/splits/
+data/manifests/*
+data/splits/*
+!data/manifests/.gitkeep
+!data/splits/.gitkeep
+
+# Scanner data copied outside the data directory
 *.aps
 *.a3d
 *.a3daps
 *.ahi
 
-# Test Outputs
+# Locally generated visualizations
+/aps_rotation.gif
+
+# Training outputs
 outputs/
 runs/
 wandb/
