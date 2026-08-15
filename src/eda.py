@@ -15,12 +15,12 @@ import pandas as pd
 
 from src.dataset import show_2d_views
 
-ZONE_COLUMNS = [f"zone_{zone}" for zone in range(1, 18)]
+COLUMNS = [f"zone_{zone}" for zone in range(1, 18)]
 
 def summarize_zones(manifest):
     """Zone별 위험물 양성 데이터 개수와 비율을 확인합니다."""
-    danger_zone_counts = manifest[ZONE_COLUMNS].sum()  # Zone별 위험물 양성 데이터 개수를 계산합니다.
-    danger_zone_rates = manifest[ZONE_COLUMNS].mean()  # Zone별 위험물 양성 데이터 비율을 계산합니다.
+    danger_zone_counts = manifest[COLUMNS].sum()  # Zone별 위험물 양성 데이터 개수를 계산합니다.
+    danger_zone_rates = manifest[COLUMNS].mean()  # Zone별 위험물 양성 데이터 비율을 계산합니다.
 
     summary = pd.DataFrame({
         "danger_zone_count": danger_zone_counts,
@@ -31,7 +31,7 @@ def summarize_zones(manifest):
 
 
 def summarize_scans(manifest):
-    danger_zone_per_scan = manifest[ZONE_COLUMNS].sum(axis=1)
+    danger_zone_per_scan = manifest[COLUMNS].sum(axis=1)
     danger_zone_distribution = danger_zone_per_scan.value_counts().sort_index()
 
     return danger_zone_distribution
@@ -43,7 +43,7 @@ def zone_cooccurrence(manifest):
     # 위험 구역 양성 동시 발생 행렬을 시각화해 데이터의 특성을 파악합니다.
     # 인공지능 모델이 동시 발생 행렬에 나타나는 잘못된 패턴을 학습하는 경향이 있는지 확인하기 위해 사용합니다.
 
-    zone_labels = manifest[ZONE_COLUMNS]
+    zone_labels = manifest[COLUMNS]
 
     cooccurrence = zone_labels.T.dot(zone_labels)
 
@@ -77,7 +77,7 @@ def sample_scans(manifest):
     """위험 구역 양성 개수가 0, 1, 2, 3개인 사람을 한 명씩 뽑아 시각화합니다."""
     sample_data = manifest.copy()
 
-    sample_data["danger_zone_count"] = sample_data[ZONE_COLUMNS].sum(axis=1)
+    sample_data["danger_zone_count"] = sample_data[COLUMNS].sum(axis=1)
 
     samples = []
     for count in range(4):
@@ -91,7 +91,7 @@ def sample_scans(manifest):
     return samples
 
 
-if __name__ == "__main__":
+def main():
     manifest = pd.read_csv(Path("data/manifests/manifest.csv"))
 
     summary = summarize_zones(manifest)
@@ -126,10 +126,14 @@ if __name__ == "__main__":
 
     for _, sample in samples.iterrows():
         aps_path = Path("data") / sample["aps_path"]
-        danger_zone = [zone for zone in ZONE_COLUMNS if sample[zone] == 1]
+        danger_zone = [zone for zone in COLUMNS if sample[zone] == 1]
 
         print(f"Scan ID: {sample["scan_id"]}")
         print(danger_zone)
         print()
 
         show_2d_views(aps_path)
+
+
+if __name__ == "__main__":
+    main()

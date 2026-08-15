@@ -154,8 +154,8 @@ def read_header(infile):
 
 def read_data(infile, scale=True):
     """파일 유형에 따른 4가지 이미지 데이터를 읽어 NumPy 배열 형태로 반환합니다."""
+    extension = Path(infile).suffix.casefold()
 
-    extension = Path(infile).suffix
     header = read_header(infile)
 
     nx = int(header["num_x_pts"][0])
@@ -273,13 +273,31 @@ def read_labels(infile):
     return label
 
 
+def search_aps_files(aps_directory):
+    """`*.aps` 데이터 파일이 유효한지 확인합니다."""
+
+    # 이 함수는 MacOS와 Windows OS 간 파일 호환성을 맞추기 위해 만들어진 함수입니다.
+    aps_directory = Path(aps_directory)
+
+    if not aps_directory.is_dir():
+        raise FileNotFoundError(f"'*.aps' 데이터가 저장된 폴더를 찾을 수 없습니다: {aps_directory}")
+
+    aps_files = sorted(path for path in aps_directory.iterdir() if path.is_file() and path.suffix.casefold() == ".aps" and not path.name.startswith("._"))
+
+    if not aps_files:
+        raise FileNotFoundError(f"'*.aps' 파일을 찾을 수 없습니다.")
+
+    return aps_files
+
+
+
 # 학습에 사용할 데이터의 메타데이터(manifest)를 생성합니다.
 def build_manifest(aps_directory, label_file):
     """학습 데이터의 메타데이터(manifest)를 생성합니다."""
     aps_directory = Path(aps_directory)
     label_file = Path(label_file)
 
-    aps_files = sorted(aps_directory.glob("*.aps"))  # "*.aps" 파일을 탐색합니다.
+    aps_files = search_aps_files(aps_directory)  # "*.aps" 파일을 탐색합니다.
 
     records = []
     for aps_file in aps_files:
@@ -361,7 +379,7 @@ class APSDataset(Dataset):
 
 if __name__ == "__main__":
     aps_directory = Path("data/stage1_aps")
-    sample_data = sorted(aps_directory.glob("*.aps"))[0]
+    sample_data = search_aps_files(aps_directory)[0]
     stage1_labels_csv = Path("data/stage1_labels.csv")
 
     header = read_header(sample_data)

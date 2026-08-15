@@ -1,5 +1,7 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv",
+    "files.encoding": "utf8",
+    "files.eol": "\n",
+    "python.terminal.activateEnvironment": true,
     "python.terminal.executeInFileDir": false,
     "python.analysis.extraPaths": [
         "${workspaceFolder}"
