@@ -10,6 +10,7 @@ from torch.utils.data import Subset
 from src.model import Phase0
 from src.model import Phase1
 from src.model import Phase2
+from src.model import Phase3
 
 
 # Notes: zero_grad() -> forward -> loss -> backward -> step
@@ -98,6 +99,8 @@ def main(mode="train", phase=0):
         model = Phase1(pretrained=True).to(device)
     elif phase == 2:
         model = Phase2(pretrained=True).to(device)
+    elif phase == 3:
+        model = Phase3(pretrained=True).to(device)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -238,4 +241,4 @@ def main(mode="train", phase=0):
 
 
 if __name__ == "__main__":
-    main(mode="smoke_test", phase=2)
+    main(mode="smoke_test", phase=3)
