@@ -15,7 +15,7 @@ from src.model import Phase3
 
 # Notes: zero_grad() -> forward -> loss -> backward -> step
 
-def train_one_epoch(model, data_loader, criterion, optimizer, scaler, device):
+def train_one_epoch(model, data_loader, criterion, optimizer, device):
     model.train()
 
     total_loss = 0.0
@@ -27,14 +27,11 @@ def train_one_epoch(model, data_loader, criterion, optimizer, scaler, device):
 
         optimizer.zero_grad(set_to_none=True)  # OMG! I need more VRAM!
 
-        # CUDA 환경에서 FP16/FP32 혼합정밀도로 forward 연산을 수행합니다.
-        with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=device.type == "cuda"):
-            result = model(scan)
-            loss = criterion(result, labels)
+        result = model(scan)
+        loss = criterion(result, labels)
 
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
+        loss.backward()
+        optimizer.step()
 
         if (batch_index + 1) % 10 == 0:
             print(f"Batch {batch_index + 1}/{len(data_loader)} | ", end="")
@@ -61,9 +58,8 @@ def validate_one_epoch(model, data_loader, criterion, device):
             scan = scan.to(device, non_blocking=device.type == "cuda")
             labels = labels.to(device, non_blocking=device.type == "cuda")
 
-            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=device.type == "cuda"):
-                result = model(scan)
-                loss = criterion(result, labels)
+            result = model(scan)
+            loss = criterion(result, labels)
 
             batch_size = scan.shape[0]
 
@@ -121,11 +117,9 @@ def main(mode="train", phase=0):
         start_epoch = 0
 
         load_saved_model = False
-        start_epoch = 0
 
         criterion = torch.nn.BCEWithLogitsLoss()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4, nesterov=True)
-        scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
         scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-4)
 
         best_validation_loss = float("inf")
@@ -137,13 +131,6 @@ def main(mode="train", phase=0):
 
             model.load_state_dict(saved_checkpoint["model_state_dict"])
             optimizer.load_state_dict(saved_checkpoint["optimizer_state_dict"])
-
-            scaler_state = saved_checkpoint.get("scaler_state_dict")
-            if scaler.is_enabled() and scaler_state:
-                # MacOS 학습 저장 데이터는 scaler를 비어있는 dictionary로 return합니다.
-                # Mac에서 학습한 checkpoint를 Windows에서 불러올 경우 scaler가 존재하지 않아 오류가 발생할 수 있는데, 이를 방어하기 위한 코드입니다.
-                scaler.load_state_dict(saved_checkpoint["scaler_state_dict"])
-
             scheduler.load_state_dict(saved_checkpoint["scheduler_state_dict"])
             start_epoch = saved_checkpoint["epoch"]
             best_validation_loss = saved_checkpoint["best_validation_loss"]
@@ -152,7 +139,7 @@ def main(mode="train", phase=0):
             print(f"모델 학습이 {start_epoch}epoch부터 다시 시작되었습니다.")
 
         for epoch in range(start_epoch, epochs):
-            train_loss = train_one_epoch(model=model, data_loader=train_loader, criterion=criterion, optimizer=optimizer, scaler=scaler, device=device)
+            train_loss = train_one_epoch(model=model, data_loader=train_loader, criterion=criterion, optimizer=optimizer, device=device)
 
             validation_loss = validate_one_epoch(model=model, data_loader=validation_loader, criterion=criterion, device=device)
             learning_rate = optimizer.param_groups[0]["lr"]
@@ -173,7 +160,6 @@ def main(mode="train", phase=0):
                     "epoch": epoch + 1,
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
-                    "scaler_state_dict": scaler.state_dict(),
                     "scheduler_state_dict": scheduler.state_dict(),
                     "best_validation_loss": best_validation_loss,
                     "early_stop_point": early_stop_point,
@@ -202,10 +188,9 @@ def main(mode="train", phase=0):
         sample_epochs = 3
         criterion = torch.nn.BCEWithLogitsLoss()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-        scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
 
         for epoch in range(sample_epochs):
-            sample_loss = train_one_epoch(model=model, data_loader=sample_loader, criterion=criterion, optimizer=optimizer, scaler=scaler, device=device)
+            sample_loss = train_one_epoch(model=model, data_loader=sample_loader, criterion=criterion, optimizer=optimizer, device=device)
 
             print(f"Sample Epoch {epoch + 1}/{sample_epochs} | ", end="")
             print(f"Loss: {sample_loss}")
