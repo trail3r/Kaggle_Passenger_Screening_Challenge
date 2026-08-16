@@ -1,12 +1,13 @@
+from datetime import datetime
 from pathlib import Path
 from time import perf_counter
+from zoneinfo import ZoneInfo
 
 import torch
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from src.dataset import APSDataset
-from torch.utils.data import Subset
 
 from src.model import Phase0
 from src.model import Phase1
@@ -16,6 +17,22 @@ from src.model import Phase3
 
 # Notes: zero_grad() -> forward -> loss -> backward -> step
 
+KST = ZoneInfo("Asia/Seoul")
+
+
+def prepare_scan_data(scan, device):
+    scan = scan.to(device, non_blocking=device.type == "cuda")
+    scan = scan.repeat(1, 1, 3, 1, 1)  # 3채널로 복제
+
+    # Normalize every view with ImageNet channel statistics.
+    mean = scan.new_tensor([0.485, 0.456, 0.406]).view(1, 1, 3, 1, 1)
+    std = scan.new_tensor([0.229, 0.224, 0.225]).view(1, 1, 3, 1, 1)
+
+    scan = (scan - mean) / std
+
+    return scan
+
+
 def train_one_epoch(model, data_loader, criterion, optimizer, device):
     model.train()
 
@@ -23,7 +40,7 @@ def train_one_epoch(model, data_loader, criterion, optimizer, device):
     sample_count = 0
 
     for batch_index, (scan, labels, _) in enumerate(data_loader):
-        scan = scan.to(device, non_blocking=device.type == "cuda")
+        scan = prepare_scan_data(scan, device)
         labels = labels.to(device, non_blocking=device.type == "cuda")
 
         optimizer.zero_grad(set_to_none=True)  # OMG! I need more VRAM!
@@ -56,7 +73,7 @@ def validate_one_epoch(model, data_loader, criterion, device):
 
     with torch.no_grad():
         for scan, labels, _ in data_loader:
-            scan = scan.to(device, non_blocking=device.type == "cuda")
+            scan = prepare_scan_data(scan, device)
             labels = labels.to(device, non_blocking=device.type == "cuda")
 
             result = model(scan)
@@ -139,6 +156,12 @@ def main(mode="train", phase=0):
 
             print(f"모델 학습이 {start_epoch}epoch부터 다시 시작되었습니다.")
 
+        train_start_time_kst = datetime.now(KST)
+        train_start_time = perf_counter()
+
+        print()
+        print(f"Train started at {train_start_time_kst:%Y-%m-%d %H:%M:%S %Z}")
+
         for epoch in range(start_epoch, epochs):
             epoch_start_time = perf_counter()
 
@@ -149,13 +172,16 @@ def main(mode="train", phase=0):
             epoch_end_time = perf_counter()
             epoch_elapsed_time = epoch_end_time - epoch_start_time
 
+            epoch_elapsed_time_minutes = int(epoch_elapsed_time // 60)
+            epoch_elapsed_time_seconds = epoch_elapsed_time % 60
+
             scheduler.step()
 
             print(f"Epoch {epoch + 1}/{epochs} | ", end="")
             print(f"Train Loss: {train_loss:.5f} | ", end="")
             print(f"Validation Loss: {validation_loss:.5f} | ", end="")
             print(f"Learning Rate: {learning_rate:.5f}")
-            print(f"Epoch Elapsed Time: {epoch_elapsed_time / 60:.2f} min")
+            print(f"Epoch Elapsed Time: {epoch_elapsed_time_minutes}min {epoch_elapsed_time_seconds:.2f}sec")
 
             # Checkpoint
             if validation_loss < best_validation_loss:
@@ -185,9 +211,16 @@ def main(mode="train", phase=0):
                 if early_stop_point >= patience:
                     print("Early Stopping!")
                     break
+
+        train_end_time_kst = datetime.now(KST)
+        train_end_time = perf_counter()
+        train_elapsed_time = train_end_time - train_start_time
+
+        print()
+        print(f"Train finished at {train_end_time_kst:%Y-%m-%d %H:%M:%S %Z}")
+        print(f"Total Training Time: {train_elapsed_time / 3600:.2f} hours")
     elif mode == "smoke_test":
-        sample = APSDataset(dataset=dataset, data_directory=data_directory, type="train", augment=False)
-        sample = Subset(sample, range(5))
+        sample = APSDataset(dataset=dataset, data_directory=data_directory, type="train", augment=False, sample_count=5)
 
         sample_loader = DataLoader(sample, batch_size=1, shuffle=False, num_workers=0)
 
@@ -208,7 +241,7 @@ def main(mode="train", phase=0):
 
         with torch.inference_mode():
             for scan, labels, scan_id in sample_loader:
-                scan = scan.to(device, non_blocking=device.type == "cuda")
+                scan = prepare_scan_data(scan, device)
 
                 result = model(scan)
                 probability = torch.sigmoid(result)

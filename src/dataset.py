@@ -52,7 +52,6 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from torchvision.transforms import InterpolationMode
-from torchvision.transforms import Normalize
 from torchvision.transforms import RandomAffine
 
 COLUMNS = [f"zone_{zone}" for zone in range(1, 18)]
@@ -334,34 +333,56 @@ def flip(scan, labels):
     return flipped_scan, flipped_labels
 
 
+def load_scan_data(infile):
+    views = get_2d_views(infile)
+    scan = np.stack(views)
+
+    scan = np.pad(scan, ((0, 0), (0, 1), (0, 0)), mode="constant")
+
+    scan = torch.from_numpy(scan).float()
+    scan = scan / scan.max()
+    scan = scan.unsqueeze(1)
+
+    return scan
+
+
 # For PyTorch
 class APSDataset(Dataset):
-    def __init__(self, dataset, data_directory, type, augment=False):
+    def __init__(self, dataset, data_directory, type, augment=False, sample_count=None):
         data = pd.read_csv(dataset)
         self.data = data[data["type"] == type].reset_index(drop=True)
-        self.data_directory = Path(data_directory)
 
+        if sample_count is not None:
+            self.data = self.data.iloc[:sample_count].reset_index(drop=True)
+
+        self.data_directory = Path(data_directory)
         self.augment = augment
+
+        self.scan_ids = self.data["scan_id"].tolist()
+
+        label_array = self.data[COLUMNS].to_numpy(dtype=np.float32)
+        self.labels = torch.from_numpy(label_array)
+
         self.random_affine = RandomAffine(degrees=15, translate=(0.01, 0.01), scale=(0.95, 1.05), interpolation=InterpolationMode.NEAREST)
-        self.normalize = Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        self.scans = []
+
+        print(f"Loading {len(self.data)} scans into RAM...")
+
+        for index, aps_path in enumerate(self.data["aps_path"]):
+            aps_path = self.data_directory / aps_path
+            scan = load_scan_data(aps_path)
+
+            self.scans.append(scan)
+
+            if (index + 1) % 100 == 0:
+                print(f"Loaded {index + 1}/{len(self.data)} scans")
+
+        print("RAM cache complete!")
 
     def __getitem__(self, index):
-        data = self.data.iloc[index]
-
-        scan_id = data["scan_id"]
-        aps_path = self.data_directory / data["aps_path"]  # Path Object
-
-        views = get_2d_views(aps_path)
-        scan = np.stack(views)
-
-        scan = np.pad(scan, ((0, 0), (0, 1), (0, 0)), mode="constant")
-
-        scan = torch.from_numpy(scan).float()
-        scan = scan / scan.max()  # Scale APS intensities to [0, 1].
-        scan = scan.unsqueeze(1)
-
-        labels = data[COLUMNS].to_numpy(dtype=np.float32)
-        labels = torch.from_numpy(labels)
+        scan = self.scans[index]
+        labels = self.labels[index]
+        scan_id = self.scan_ids[index]
 
         if self.augment:
             if torch.rand(1).item() < 0.5:
@@ -374,13 +395,10 @@ class APSDataset(Dataset):
 
             scan = self.random_affine(scan)
 
-        scan = scan.repeat(1, 3, 1, 1)
-        scan = self.normalize(scan)
-
         return scan, labels, scan_id
 
     def __len__(self):  # Data 길이 확인
-        return len(self.data)
+        return len(self.scan_ids)
 
 
 if __name__ == "__main__":
