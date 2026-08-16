@@ -9,6 +9,7 @@ from torch.utils.data import Subset
 
 from src.model import Phase0
 from src.model import Phase1
+from src.model import Phase2
 
 
 # Notes: zero_grad() -> forward -> loss -> backward -> step
@@ -95,6 +96,8 @@ def main(mode="train", phase=0):
         model = Phase0(pretrained=True).to(device)
     elif phase == 1:
         model = Phase1(pretrained=True).to(device)
+    elif phase == 2:
+        model = Phase2(pretrained=True).to(device)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -191,9 +194,9 @@ def main(mode="train", phase=0):
         sample = APSDataset(dataset=dataset, data_directory=data_directory, type="train", augment=False)
         sample = Subset(sample, range(5))
 
-        sample_loader = DataLoader(sample, batch_size=2, shuffle=False, num_workers=0)
+        sample_loader = DataLoader(sample, batch_size=1, shuffle=False, num_workers=0)
 
-        sample_epochs = 10
+        sample_epochs = 3
         criterion = torch.nn.BCEWithLogitsLoss()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
         scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
@@ -204,8 +207,35 @@ def main(mode="train", phase=0):
             print(f"Sample Epoch {epoch + 1}/{sample_epochs} | ", end="")
             print(f"Loss: {sample_loss}")
 
+        model.eval()
+
+        sample_ids = []
+        sample_probabilities = []
+
+        with torch.inference_mode():
+            for scan, labels, scan_id in sample_loader:
+                scan = scan.to(device, non_blocking=device.type == "cuda")
+
+                result = model(scan)
+                probability = torch.sigmoid(result)
+
+                sample_ids.extend(scan_id)
+                sample_probabilities.append(probability.cpu())
+
+        sample_probabilities = torch.cat(sample_probabilities, dim=0)
+
+        prediction_difference = sample_probabilities.std(dim=0).mean().item()
+
+        print()
+        print("Smoke Test Predictions")
+
+        for scan_id, probability in zip(sample_ids, sample_probabilities):
+            print(f"{scan_id} | Mean Probability: {probability.mean().item():.5f}")
+
+        print(f"Mean Prediction Difference: {prediction_difference:.5f}")
+
     return 0
 
 
 if __name__ == "__main__":
-    main(mode="smoke_test", phase=1)
+    main(mode="smoke_test", phase=2)

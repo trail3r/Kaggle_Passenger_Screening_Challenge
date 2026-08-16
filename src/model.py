@@ -162,6 +162,7 @@ class Phase1(nn.Module):
         channel_weights = channel_weights.unsqueeze(-1).unsqueeze(-1)
 
         features = features * channel_weights
+        features = features.contiguous()  # Ensure MPS-compatible memory layout.
 
         # Multi-scale CNN
         global_features = self.global_pool(features)
@@ -208,38 +209,176 @@ class Phase1(nn.Module):
         return result
 
 
-if __name__ == "__main__":
+class Phase2(nn.Module):
+    def __init__(self, pretrained=True):
+        super().__init__()
+
+        weights = ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
+        convnext = convnext_tiny(weights=weights)
+
+        self.backbone = convnext.features
+        self.backbone_norm = convnext.classifier[0]
+
+        self.feature_pool = nn.AdaptiveAvgPool2d((10, 8))
+        self.feature_adapter = nn.Conv2d(in_channels=768, out_channels=2048, kernel_size=1)
+        # ConvNeXt의 출력은 768채널이기 때문에 1*1 Convolution 연산을 수행해 채널 수를 2048채널로 증가시킵니다.
+        # 이는 Phase0 모델과의 Backbone 교체 효과만을 비교하기 위한 조치입니다.
+
+        self.branch_1x1 = nn.Sequential(
+            nn.Conv2d(in_channels=2048, out_channels=512, kernel_size=1, stride=1, padding=0),
+            nn.ReLU(),
+            nn.BatchNorm2d(512)
+        )
+
+        self.branch_3x3 = nn.Sequential(
+            nn.Conv2d(in_channels=2048, out_channels=256, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.BatchNorm2d(256)
+        )
+
+        self.branch_5x5 = nn.Sequential(
+            nn.Conv2d(in_channels=2048, out_channels=128, kernel_size=5, stride=3, padding=2),
+            nn.ReLU(),
+            nn.BatchNorm2d(128)
+        )
+
+        self.global_pool = nn.AdaptiveAvgPool2d(1)
+
+        self.channel_attention = nn.Linear(2048, 2048)
+
+        # Change LSTM to Transformer
+        self.projection = nn.Sequential(nn.Linear(49664, 768), nn.LayerNorm(768))
+        tx_encoder_layer = nn.TransformerEncoderLayer(d_model=768, nhead=8, dim_feedforward=2048, dropout=0.1, activation="gelu", batch_first=True, norm_first=True)
+        self.transformer = nn.TransformerEncoder(encoder_layer=tx_encoder_layer, num_layers=1, norm=nn.LayerNorm(768), enable_nested_tensor=False)
+
+        self.view_position = nn.Parameter(torch.zeros(1, 16, 768))
+        nn.init.trunc_normal_(self.view_position, std=0.02)
+
+        self.view_attention = nn.Linear(768, 16)
+        self.dropout = nn.Dropout(p=0.1)
+        self.classifier = nn.Linear(768, 17)
+
+
+    def encode(self, image):
+        features = self.backbone(image)
+        features = self.backbone_norm(features)
+        features = self.feature_pool(features)
+        features = self.feature_adapter(features)
+
+        # Channel Attention
+        channel_weights = self.global_pool(features)
+        channel_weights = channel_weights.flatten(start_dim=1)
+        channel_weights = self.channel_attention(channel_weights)
+        channel_weights = channel_weights.unsqueeze(-1).unsqueeze(-1)
+
+        features = features * channel_weights
+        features = features.contiguous()  # Ensure MPS-compatible memory layout.
+
+        # Multi-scale CNN
+        global_features = self.global_pool(features)
+        features_1x1 = self.branch_1x1(features)
+        features_3x3 = self.branch_3x3(features)
+        features_5x5 = self.branch_5x5(features)
+
+        global_features = global_features.flatten(start_dim=1)
+        features_1x1 = features_1x1.flatten(start_dim=1)
+        features_3x3 = features_3x3.flatten(start_dim=1)
+        features_5x5 = features_5x5.flatten(start_dim=1)
+
+        view_features = torch.cat([global_features, features_1x1, features_3x3, features_5x5], dim=1)
+
+        return view_features
+
+
+    def forward(self, scan):
+        outputs = []
+
+        for index in range(scan.shape[1]):
+            image = scan[:, index].contiguous()
+            features = self.encode(image)
+            outputs.append(features)
+
+        outputs = torch.stack(outputs, dim=1)
+        outputs = self.projection(outputs)
+        outputs = outputs + self.view_position
+        outputs = self.transformer(outputs)
+
+        final_output = outputs[:, -1, :]
+
+        attention_score = self.view_attention(final_output)
+        attention_weights = torch.softmax(attention_score, dim=1)
+
+        scan_features = torch.bmm(
+            attention_weights.unsqueeze(1),
+            outputs
+        )
+        scan_features = scan_features.squeeze(1)
+
+        scan_features = self.dropout(scan_features)
+
+        result = self.classifier(scan_features)
+
+        return result
+
+
+def test(phase):
     torch.manual_seed(42)
 
-    """Phase0 Test Codes: ResNet-50 Pretrianed Model
-    phase0 = Phase0(pretrained=False)
-    phase0.eval()
+    if phase == 0:
+        model = Phase0(pretrained=False)
 
-    scan = torch.randn(1, 16, 3, 661, 512)
+        # Phase0는 Adaptive Pooling을 사용하지 않아 원본 크기를 전달합니다.
+        height = 661
+        width = 512
+    elif phase == 1:
+        model = Phase1(pretrained=False)
 
-    with torch.no_grad():
-        result = phase0(scan)
+        height = 128
+        width = 96
+    elif phase == 2:
+        model = Phase2(pretrained=False)
 
-    print(result.shape) """
+        height = 128
+        width = 96
+    else:
+        raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
-    phase1 = Phase1(pretrained=False)
-    phase1.train()
+    model.train()
 
-    # 역전파 테스트에서는 메모리와 시간을 줄이기 위해 작은 이미지를 사용합니다.
-    scan = torch.randn(1, 16, 3, 128, 96)
+    scan = torch.randn(1, 16, 3, height, width)
     labels = torch.randint(low=0, high=2, size=(1, 17)).float()
 
     criterion = nn.BCEWithLogitsLoss()
 
-    result = phase1(scan)
+    result = model(scan)
     loss = criterion(result, labels)
 
     loss.backward()
 
-    print(f"Result shape: {result.shape}")
-    print(f"Loss: {loss.item()}")
+    print(f"Phase{phase} Test")
+    print(f"Result Shape: {result.shape}")
+    print(f"Loss: {loss}")
 
-    print("Backbone gradient:", phase1.backbone[0][0].weight.grad.norm().item())
-    print("Adapter gradient:", phase1.feature_adapter.weight.grad.norm().item())
-    print("LSTM gradient:", phase1.lstm.weight_ih_l0.grad.norm().item())
-    print("Classifier gradient:", phase1.classifier.weight.grad.norm().item())
+    backbone_parameters = next(model.backbone.parameters())
+    print(f"Backbone Gradient: {backbone_parameters.grad.norm().item()}")
+
+    if hasattr(model, "lstm"):  # Phase0 and Phase1
+        print(f"LSTM Gradient: {model.lstm.weight_ih_l0.grad.norm().item()}")
+
+    if hasattr(model, "feature_adapter"):  # Phase1 and Phase 2
+        print(f"Adapter Gradient: {model.feature_adapter.weight.grad.norm().item()}")
+
+    if hasattr(model, "projection"):  # Phase2
+        print(f"Projection Gradient: {model.projection[0].weight.grad.norm().item()}")
+
+    if hasattr(model, "transformer"):  # Phase2
+        print(f"Transformer Gradient: {model.transformer.layers[0].self_attn.in_proj_weight.grad.norm().item()}")
+
+    if hasattr(model, "view_position"):  # Phase2
+        print(f"View Position Gradient: {model.view_position.grad.norm().item()}")
+
+    print(f"Classifier Gradient: {model.classifier.weight.grad.norm().item()}")
+
+
+if __name__ == "__main__":
+    test(phase=2)
