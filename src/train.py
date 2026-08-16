@@ -1,4 +1,5 @@
 from pathlib import Path
+from time import perf_counter
 
 import torch
 from torch.utils.data import DataLoader
@@ -139,10 +140,14 @@ def main(mode="train", phase=0):
             print(f"모델 학습이 {start_epoch}epoch부터 다시 시작되었습니다.")
 
         for epoch in range(start_epoch, epochs):
-            train_loss = train_one_epoch(model=model, data_loader=train_loader, criterion=criterion, optimizer=optimizer, device=device)
+            epoch_start_time = perf_counter()
 
+            train_loss = train_one_epoch(model=model, data_loader=train_loader, criterion=criterion, optimizer=optimizer, device=device)
             validation_loss = validate_one_epoch(model=model, data_loader=validation_loader, criterion=criterion, device=device)
             learning_rate = optimizer.param_groups[0]["lr"]
+
+            epoch_end_time = perf_counter()
+            epoch_elapsed_time = epoch_end_time - epoch_start_time
 
             scheduler.step()
 
@@ -150,6 +155,7 @@ def main(mode="train", phase=0):
             print(f"Train Loss: {train_loss:.5f} | ", end="")
             print(f"Validation Loss: {validation_loss:.5f} | ", end="")
             print(f"Learning Rate: {learning_rate:.5f}")
+            print(f"Epoch Elapsed Time: {epoch_elapsed_time / 60:.2f} min")
 
             # Checkpoint
             if validation_loss < best_validation_loss:
@@ -226,4 +232,4 @@ def main(mode="train", phase=0):
 
 
 if __name__ == "__main__":
-    main(mode="smoke_test", phase=3)
+    main(mode="train", phase=0)
