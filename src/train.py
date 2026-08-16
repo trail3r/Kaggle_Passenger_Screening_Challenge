@@ -8,11 +8,12 @@ from src.dataset import APSDataset
 from torch.utils.data import Subset
 
 from src.model import Phase0
+from src.model import Phase1
 
 
 # Notes: zero_grad() -> forward -> loss -> backward -> step
 
-def train_one_epoch(model, data_loader, criterion, optimizer, device):
+def train_one_epoch(model, data_loader, criterion, optimizer, scaler, device):
     model.train()
 
     total_loss = 0.0
@@ -22,15 +23,16 @@ def train_one_epoch(model, data_loader, criterion, optimizer, device):
         scan = scan.to(device, non_blocking=device.type == "cuda")
         labels = labels.to(device, non_blocking=device.type == "cuda")
 
-        scan = scan.repeat(1, 1, 3, 1, 1)  # GrayScale 입력을 3번 반복해 3채널 입력으로 변경합니다.
+        optimizer.zero_grad(set_to_none=True)  # OMG! I need more VRAM!
 
-        optimizer.zero_grad()
+        # CUDA 환경에서 FP16/FP32 혼합정밀도로 forward 연산을 수행합니다.
+        with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=device.type == "cuda"):
+            result = model(scan)
+            loss = criterion(result, labels)
 
-        result = model(scan)
-        loss = criterion(result, labels)
-
-        loss.backward()
-        optimizer.step()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
         if (batch_index + 1) % 10 == 0:
             print(f"Batch {batch_index + 1}/{len(data_loader)} | ", end="")
@@ -57,10 +59,9 @@ def validate_one_epoch(model, data_loader, criterion, device):
             scan = scan.to(device, non_blocking=device.type == "cuda")
             labels = labels.to(device, non_blocking=device.type == "cuda")
 
-            scan = scan.repeat(1, 1, 3, 1, 1)
-
-            result = model(scan)
-            loss = criterion(result, labels)
+            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=device.type == "cuda"):
+                result = model(scan)
+                loss = criterion(result, labels)
 
             batch_size = scan.shape[0]
 
@@ -72,7 +73,7 @@ def validate_one_epoch(model, data_loader, criterion, device):
     return average_loss
 
 
-def main(mode="train"):
+def main(mode="train", phase=0):
     torch.manual_seed(42)  # 재현성을 높이기 위해 seed를 42로 고정합니다.
 
     if torch.cuda.is_available():
@@ -90,6 +91,13 @@ def main(mode="train"):
     dataset = Path("data/splits/dataset.csv")
     data_directory = Path("data")
 
+    if phase == 0:
+        model = Phase0(pretrained=True).to(device)
+    elif phase == 1:
+        model = Phase1(pretrained=True).to(device)
+    else:
+        raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
+
     if mode == "train":
         train_dataset = APSDataset(dataset=dataset, data_directory=data_directory, type="train", augment=True)
         validation_dataset = APSDataset(dataset=dataset, data_directory=data_directory, type="validation", augment=False)
@@ -99,9 +107,6 @@ def main(mode="train"):
         train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=8, pin_memory=pin_memory, persistent_workers=True, drop_last=True)
         validation_loader = DataLoader(validation_dataset, batch_size=2, shuffle=False, num_workers=0, pin_memory=pin_memory)
         # Validation은 결과 재현을 위해 shuffle을 False로 설정하였습니다.
-
-        # Train the Model.
-        model = Phase0(pretrained=True).to(device)
 
         # Hyperparameters.
         epochs = 401
@@ -114,10 +119,11 @@ def main(mode="train"):
 
         criterion = torch.nn.BCEWithLogitsLoss()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4, nesterov=True)
+        scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
         scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-4)
 
         best_validation_loss = float("inf")
-        checkpoint = Path(f"models/phase0.pt")
+        checkpoint = Path(f"models/phase{phase}.pt")
         checkpoint.parent.mkdir(parents=True, exist_ok=True)
 
         if load_saved_model:
@@ -125,6 +131,13 @@ def main(mode="train"):
 
             model.load_state_dict(saved_checkpoint["model_state_dict"])
             optimizer.load_state_dict(saved_checkpoint["optimizer_state_dict"])
+
+            scaler_state = saved_checkpoint.get("scaler_state_dict")
+            if scaler.is_enabled() and scaler_state:
+                # MacOS 학습 저장 데이터는 scaler를 비어있는 dictionary로 return합니다.
+                # Mac에서 학습한 checkpoint를 Windows에서 불러올 경우 scaler가 존재하지 않아 오류가 발생할 수 있는데, 이를 방어하기 위한 코드입니다.
+                scaler.load_state_dict(saved_checkpoint["scaler_state_dict"])
+
             scheduler.load_state_dict(saved_checkpoint["scheduler_state_dict"])
             start_epoch = saved_checkpoint["epoch"]
             best_validation_loss = saved_checkpoint["best_validation_loss"]
@@ -133,7 +146,7 @@ def main(mode="train"):
             print(f"모델 학습이 {start_epoch}epoch부터 다시 시작되었습니다.")
 
         for epoch in range(start_epoch, epochs):
-            train_loss = train_one_epoch(model=model, data_loader=train_loader, criterion=criterion, optimizer=optimizer, device=device)
+            train_loss = train_one_epoch(model=model, data_loader=train_loader, criterion=criterion, optimizer=optimizer, scaler=scaler, device=device)
 
             validation_loss = validate_one_epoch(model=model, data_loader=validation_loader, criterion=criterion, device=device)
             learning_rate = optimizer.param_groups[0]["lr"]
@@ -154,6 +167,7 @@ def main(mode="train"):
                     "epoch": epoch + 1,
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
+                    "scaler_state_dict": scaler.state_dict(),
                     "scheduler_state_dict": scheduler.state_dict(),
                     "best_validation_loss": best_validation_loss,
                     "early_stop_point": early_stop_point,
@@ -174,8 +188,6 @@ def main(mode="train"):
                     print("Early Stopping!")
                     break
     elif mode == "smoke_test":
-        model = Phase0(pretrained=False).to(device)
-
         sample = APSDataset(dataset=dataset, data_directory=data_directory, type="train", augment=False)
         sample = Subset(sample, range(5))
 
@@ -184,9 +196,10 @@ def main(mode="train"):
         sample_epochs = 10
         criterion = torch.nn.BCEWithLogitsLoss()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+        scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
 
         for epoch in range(sample_epochs):
-            sample_loss = train_one_epoch(model=model, data_loader=sample_loader, criterion=criterion, optimizer=optimizer, device=device)
+            sample_loss = train_one_epoch(model=model, data_loader=sample_loader, criterion=criterion, optimizer=optimizer, scaler=scaler, device=device)
 
             print(f"Sample Epoch {epoch + 1}/{sample_epochs} | ", end="")
             print(f"Loss: {sample_loss}")
@@ -195,4 +208,4 @@ def main(mode="train"):
 
 
 if __name__ == "__main__":
-    main()
+    main(mode="smoke_test", phase=1)

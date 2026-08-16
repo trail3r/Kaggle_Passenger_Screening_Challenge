@@ -16,10 +16,11 @@ from torch.utils.data import DataLoader
 
 from src.dataset import APSDataset
 from src.model import Phase0
+from src.model import Phase1
+
 
 DATA_DIRECTORY = Path("data")
 DATASET = Path("data/splits/dataset.csv")
-CHECKPOINT = Path("models/phase0.pt")
 RESULT = Path("results")
 
 
@@ -31,7 +32,7 @@ def synchronize(device):
         torch.mps.synchronize()
 
 
-def main():
+def main(phase=0):
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif torch.backends.mps.is_available():
@@ -44,6 +45,13 @@ def main():
 
     print(f"You are evaluation the model by using {device}!")
 
+    if phase == 0:
+        model = Phase0(pretrained=False)
+    if phase == 1:
+        model = Phase1(pretrained=False)
+
+    CHECKPOINT = Path(f"models/phase{phase}.pt")
+
     validation_dataset = APSDataset(dataset=DATASET, data_directory=DATA_DIRECTORY, type="validation", augment=False)
     validation_loader = DataLoader(validation_dataset, batch_size=2, shuffle=False, num_workers=0, pin_memory=pin_memory)
 
@@ -52,7 +60,6 @@ def main():
     print(f"Checkpoint Epoch: {checkpoint["epoch"]}")
     print(f"Saved Validation Loss: {checkpoint["best_validation_loss"]:.5f}")
 
-    model = Phase0(pretrained=False)
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)
     model.eval()
@@ -78,8 +85,6 @@ def main():
         for index, (scan, label, scan_id) in enumerate(validation_loader):
             scan = scan.to(device, non_blocking=pin_memory)
             label = label.to(device, non_blocking=pin_memory)
-
-            scan = scan.repeat(1, 1, 3, 1, 1)
 
             predict = model(scan)
             probability = torch.sigmoid(predict)
@@ -126,7 +131,7 @@ def main():
     f1 = f1_score(flat_labels, flat_predictions, zero_division=0)  # I am a fan of Ferrari F1, Charles Leclerc!
 
     print()
-    print("Phase0 Validation Result")
+    print(f"Phase{phase} Validation Result")
     print(f"BCE Log Loss  : {validation_loss:.5f}")
     print(f"Macro ROC-AUC : {roc_auc:.5f}")
     print(f"Macro PR-AUC  : {pr_auc:.5f}")
@@ -168,11 +173,11 @@ def main():
         result[f"zone_{section}_probability"] = probabilities[:, zone]
 
     result = pd.DataFrame(result)
-    output = RESULT / "phase0_validation_predictions.csv"
+    output = RESULT / f"phase{phase}_validation_predictions.csv"
     result.to_csv(output, index=False)
 
     print(f"Prediction results are successfully saved in {output}!")
 
 
 if __name__ == "__main__":
-    main()
+    main(phase=1)

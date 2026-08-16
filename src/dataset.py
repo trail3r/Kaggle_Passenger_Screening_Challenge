@@ -52,6 +52,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from torchvision.transforms import InterpolationMode
+from torchvision.transforms import Normalize
 from torchvision.transforms import RandomAffine
 
 COLUMNS = [f"zone_{zone}" for zone in range(1, 18)]
@@ -342,6 +343,7 @@ class APSDataset(Dataset):
 
         self.augment = augment
         self.random_affine = RandomAffine(degrees=15, translate=(0.01, 0.01), scale=(0.95, 1.05), interpolation=InterpolationMode.NEAREST)
+        self.normalize = Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
     def __getitem__(self, index):
         data = self.data.iloc[index]
@@ -355,6 +357,7 @@ class APSDataset(Dataset):
         scan = np.pad(scan, ((0, 0), (0, 1), (0, 0)), mode="constant")
 
         scan = torch.from_numpy(scan).float()
+        scan = scan / scan.max()  # Scale APS intensities to [0, 1].
         scan = scan.unsqueeze(1)
 
         labels = data[COLUMNS].to_numpy(dtype=np.float32)
@@ -370,6 +373,9 @@ class APSDataset(Dataset):
             scan = torch.roll(scan, shifts=shift, dims=0)
 
             scan = self.random_affine(scan)
+
+        scan = scan.repeat(1, 3, 1, 1)
+        scan = self.normalize(scan)
 
         return scan, labels, scan_id
 
