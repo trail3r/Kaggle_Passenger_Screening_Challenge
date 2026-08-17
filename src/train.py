@@ -6,14 +6,16 @@ from zoneinfo import ZoneInfo
 import torch
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import LinearLR
+from torch.optim.lr_scheduler import SequentialLR
 
 from src.dataset import APSDataset
 from src.dataset import prepare_scan_data
 
 from src.model import Phase0
 from src.model import Phase1
-from src.model import Phase2
 from src.model import Phase3
+from src.model import Phase4
 
 
 # Notes: zero_grad() -> forward -> loss -> backward -> step
@@ -77,6 +79,65 @@ def validate_one_epoch(model, data_loader, criterion, device):
     return average_loss
 
 
+def adaptive_optimizer(model, phase):
+    """Phase별로 적절한 optimizer를 선택합니다."""
+    if phase in (0, 1):
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4, nesterov=True)
+
+        return optimizer
+
+    # ConvNeXt는 AdamW를 Optimizer로 사용하였으며, ImageNet fine-tuning에서 매우 작은 learning rate를 사용했습니다.
+    # 이 아이디어를 가져와 사전학습 Backbone ConvNeXt-Tiny 학습에는 5e-5, 그 뒤의 새로운 레이어에는 이보다 약간 큰 5e-4로 설정하였습니다.
+    backbone_parameters = []
+    task_parameters = []
+
+    for name, parameter in model.named_parameters():
+        if name.startswith("backbone"):
+            backbone_parameters.append(parameter)
+        else:
+            task_parameters.append(parameter)
+
+    optimizer = torch.optim.AdamW(
+        [
+            {
+                "params": backbone_parameters,
+                "lr": 5e-5
+            },
+            {
+                "params": task_parameters,
+                "lr": 5e-4
+            }
+        ],
+        betas=(0.9, 0.999),
+        weight_decay=0.05
+    )
+    # Does it really have more readability? I have no idea...
+
+    print(f"Optimizer: {optimizer.__class__.__name__}")
+
+    for index, parameter_group in enumerate(optimizer.param_groups):
+        print(f"Parameter Group {index + 1}")
+        print(f"Learning Rate: {parameter_group['lr']}")
+
+    return optimizer
+
+
+def adaptive_scheduler(optimizer, phase, epochs):
+    """Phase별로 적절한 learning rate scheduler를 선택합니다."""
+    if phase in (0, 1):
+        scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-4)
+
+        return scheduler
+
+    warmup_epochs = 5
+
+    warmup_scheduler = LinearLR(optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs)
+    cosine_scheduler = CosineAnnealingLR(optimizer, T_max=epochs - warmup_epochs, eta_min=0.0)
+    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[warmup_epochs])
+
+    return scheduler
+
+
 def main(mode="train", phase=0):
     torch.manual_seed(42)  # 재현성을 높이기 위해 seed를 42로 고정합니다.
 
@@ -100,9 +161,11 @@ def main(mode="train", phase=0):
     elif phase == 1:
         model = Phase1(pretrained=True).to(device)
     elif phase == 2:
-        model = Phase2(pretrained=True).to(device)
+        model = Phase1(pretrained=True).to(device)
     elif phase == 3:
         model = Phase3(pretrained=True).to(device)
+    elif phase == 4:
+        model = Phase4(pretrained=True).to(device)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -125,8 +188,8 @@ def main(mode="train", phase=0):
         load_saved_model = False
 
         criterion = torch.nn.BCEWithLogitsLoss()
-        optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4, nesterov=True)
-        scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-4)
+        optimizer = adaptive_optimizer(model, phase)
+        scheduler = adaptive_scheduler(optimizer=optimizer, phase=phase, epochs=epochs)
 
         best_validation_loss = float("inf")
         checkpoint = Path(f"models/phase{phase}.pt")
@@ -155,7 +218,7 @@ def main(mode="train", phase=0):
 
             train_loss = train_one_epoch(model=model, data_loader=train_loader, criterion=criterion, optimizer=optimizer, device=device)
             validation_loss = validate_one_epoch(model=model, data_loader=validation_loader, criterion=criterion, device=device)
-            learning_rate = optimizer.param_groups[0]["lr"]
+            learning_rates = [parameter_group["lr"] for parameter_group in optimizer.param_groups]
 
             epoch_end_time = perf_counter()
             epoch_elapsed_time = epoch_end_time - epoch_start_time
@@ -168,7 +231,12 @@ def main(mode="train", phase=0):
             print(f"Epoch {epoch + 1}/{epochs} | ", end="")
             print(f"Train Loss: {train_loss:.5f} | ", end="")
             print(f"Validation Loss: {validation_loss:.5f} | ", end="")
-            print(f"Learning Rate: {learning_rate:.5f}")
+
+            if phase in (0, 1):
+                print(f"Learning Rate: {learning_rates[0]:.5f}")
+            else:
+                print(f"Backbone Learning Rate: {learning_rates[0]:.2e} | Task Learning Rate: {learning_rates[1]:.2e}")
+
             print(f"Epoch Elapsed Time: {epoch_elapsed_time_minutes}min {epoch_elapsed_time_seconds:.2f}sec")
 
             # Checkpoint
@@ -214,13 +282,20 @@ def main(mode="train", phase=0):
 
         sample_epochs = 3
         criterion = torch.nn.BCEWithLogitsLoss()
-        optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+        optimizer = adaptive_optimizer(model, phase)
+        scheduler = adaptive_scheduler(optimizer=optimizer, phase=phase, epochs=100)
 
         for epoch in range(sample_epochs):
+            learning_rates = [parameter_group["lr"] for parameter_group in optimizer.param_groups]
+
+            print(f"Backbone Learning Rate: {learning_rates[0]:.2e}")
+            print(f"Task Learning Rate: {learning_rates[1]:.2e}")
+
             sample_loss = train_one_epoch(model=model, data_loader=sample_loader, criterion=criterion, optimizer=optimizer, device=device)
 
-            print(f"Sample Epoch {epoch + 1}/{sample_epochs} | ", end="")
-            print(f"Loss: {sample_loss}")
+            scheduler.step()
+
+            print(f"Sample Epoch {epoch + 1}/{sample_epochs} | Loss: {sample_loss}")
 
         model.eval()
 
@@ -253,4 +328,4 @@ def main(mode="train", phase=0):
 
 
 if __name__ == "__main__":
-    main(mode="train", phase=1)
+    main(mode="train", phase=2)

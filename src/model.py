@@ -209,7 +209,7 @@ class Phase1(nn.Module):
         return result
 
 
-class Phase2(nn.Module):
+class Phase3(nn.Module):
     def __init__(self, pretrained=True):
         super().__init__()
 
@@ -320,7 +320,7 @@ class Phase2(nn.Module):
         return result
 
 
-class Phase3(nn.Module):
+class Phase4(nn.Module):
     def __init__(self, pretrained=True):
         super().__init__()
 
@@ -434,17 +434,26 @@ def test(phase):
         height = 661
         width = 512
     elif phase == 1:
-        model = Phase1(pretrained=False)
+        model = Phase1(pretrained=False)  # Optimizer로 SGD를 사용합니다.
 
         height = 128
         width = 96
     elif phase == 2:
-        model = Phase2(pretrained=False)
+        # Phase0에서 학습 조건을 모두 유지한 채 Backbone을 ConvNeXt-Tiny로 교체하였습니다.
+        # 실험 결과, Backbone 교체만으로는 유의미한 성능 상승을 관찰하지 못 하였습니다.
+        # Phase1은 Phase0의 학습 조건을 유지하고 Backbone만 ConvNeXt-Tiny로 교체하였습니다.
+        # Phase2는 Phase1의 모델 구조를 유지하고 ConvNeXt에 맞게 학습 조건을 변경합니다.
+        model = Phase1(pretrained=False)
 
         height = 128
         width = 96
     elif phase == 3:
         model = Phase3(pretrained=False)
+
+        height = 128
+        width = 96
+    elif phase == 4:
+        model = Phase4(pretrained=False)
 
         height = 128
         width = 96
@@ -470,19 +479,19 @@ def test(phase):
     backbone_parameters = next(model.backbone.parameters())
     print(f"Backbone Gradient: {backbone_parameters.grad.norm().item()}")
 
-    if hasattr(model, "lstm"):  # Phase0 and Phase1
+    if hasattr(model, "lstm"):  # Phase0, Phase1 and Phase2
         print(f"LSTM Gradient: {model.lstm.weight_ih_l0.grad.norm().item()}")
 
-    if hasattr(model, "feature_adapter"):  # Phase1, Phase 2 and Phase3
+    if hasattr(model, "feature_adapter"):  # Phase1, Phase 2, Phase3 and Phase4
         print(f"Adapter Gradient: {model.feature_adapter.weight.grad.norm().item()}")
 
-    if hasattr(model, "projection"):  # Phase2 and Phase3
+    if hasattr(model, "projection"):  # Phase3 and Phase4
         print(f"Projection Gradient: {model.projection[0].weight.grad.norm().item()}")
 
-    if hasattr(model, "transformer"):  # Phase2 and Phase3
+    if hasattr(model, "transformer"):  # Phase3 and Phase4
         print(f"Transformer Gradient: {model.transformer.layers[0].self_attn.in_proj_weight.grad.norm().item()}")
 
-    if hasattr(model, "view_position"):  # Phase2
+    if hasattr(model, "view_position"):  # Phase3
         print(f"View Position Gradient: {model.view_position.grad.norm().item()}")
 
     if hasattr(model, "view_attention"):
@@ -505,4 +514,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase=3)
+    test(phase=2)

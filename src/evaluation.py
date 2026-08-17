@@ -19,8 +19,8 @@ from src.dataset import prepare_scan_data
 
 from src.model import Phase0
 from src.model import Phase1
-from src.model import Phase2
 from src.model import Phase3
+from src.model import Phase4
 
 
 DATA_DIRECTORY = Path("data")
@@ -54,9 +54,11 @@ def main(phase=0):
     elif phase == 1:
         model = Phase1(pretrained=False)
     elif phase == 2:
-        model = Phase2(pretrained=False)
+        model = Phase1(pretrained=False)
     elif phase == 3:
         model = Phase3(pretrained=False)
+    elif phase == 4:
+        model = Phase4(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
