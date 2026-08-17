@@ -15,7 +15,6 @@ from src.dataset import prepare_scan_data
 from src.model import Phase0
 from src.model import Phase1
 from src.model import Phase3
-from src.model import Phase4
 
 
 # Notes: zero_grad() -> forward -> loss -> backward -> step
@@ -163,10 +162,7 @@ def main(mode="train", phase=3):
     elif phase == 2:
         model = Phase1(pretrained=True).to(device)
     elif phase == 3:
-        # ConvNeXt의 네 Stage 특징을 결합하고, LSTM으로 16개 View를 순차적으로 처리합니다.
-        model = Phase3(pretrained=True).to(device)
-    elif phase == 4:
-        model = Phase4(pretrained=True).to(device)
+        model = Phase3(pretrained=True).to(device)  # ConvNeXt 특징을 LSTM으로 순차 처리하고, 하나의 평가 함수를 모든 View에 공유합니다.
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 

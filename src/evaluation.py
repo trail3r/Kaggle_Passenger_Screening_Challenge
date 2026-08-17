@@ -21,7 +21,6 @@ from src.dataset import prepare_scan_data
 from src.model import Phase0
 from src.model import Phase1
 from src.model import Phase3
-from src.model import Phase4
 
 
 DATA_DIRECTORY = Path("data")
@@ -57,10 +56,7 @@ def main(phase=3):
     elif phase == 2:
         model = Phase1(pretrained=False)
     elif phase == 3:
-        # ConvNeXt의 네 Stage 특징을 결합하고, LSTM으로 16개 View를 순차적으로 처리합니다.
         model = Phase3(pretrained=False)
-    elif phase == 4:
-        model = Phase4(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
