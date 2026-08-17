@@ -217,41 +217,38 @@ class Phase3(nn.Module):
         convnext = convnext_tiny(weights=weights)
 
         self.backbone = convnext.features
-        self.backbone_norm = convnext.classifier[0]
-
-        self.feature_pool = nn.AdaptiveAvgPool2d((10, 8))
-        self.feature_adapter = nn.Conv2d(in_channels=768, out_channels=2048, kernel_size=1)
-        # ConvNeXt의 출력은 768채널이기 때문에 1*1 Convolution 연산을 수행해 채널 수를 2048채널로 증가시킵니다.
-
-        self.branch_1x1 = nn.Sequential(
-            nn.Conv2d(in_channels=2048, out_channels=512, kernel_size=1, stride=1, padding=0),
-            nn.ReLU(),
-            nn.BatchNorm2d(512)
-        )
-
-        self.branch_3x3 = nn.Sequential(
-            nn.Conv2d(in_channels=2048, out_channels=256, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.BatchNorm2d(256)
-        )
-
-        self.branch_5x5 = nn.Sequential(
-            nn.Conv2d(in_channels=2048, out_channels=128, kernel_size=5, stride=3, padding=2),
-            nn.ReLU(),
-            nn.BatchNorm2d(128)
-        )
 
         self.global_pool = nn.AdaptiveAvgPool2d(1)
 
-        self.channel_attention = nn.Linear(2048, 2048)
+        # ConvNeXt의 계층적인 Stage 출력을 같은 크기의 Multi-scale Feature로 변환합니다.
+        self.stage_1_projection = nn.Sequential(
+            nn.LayerNorm(96),
+            nn.Linear(in_features=96, out_features=192),
+            nn.GELU()
+        )
 
-        # Change LSTM to Transformer
-        self.projection = nn.Sequential(nn.Linear(49664, 768), nn.LayerNorm(768))
-        tx_encoder_layer = nn.TransformerEncoderLayer(d_model=768, nhead=8, dim_feedforward=2048, dropout=0.1, activation="gelu", batch_first=True, norm_first=True)
-        self.transformer = nn.TransformerEncoder(encoder_layer=tx_encoder_layer, num_layers=1, norm=nn.LayerNorm(768), enable_nested_tensor=False)
+        self.stage_2_projection = nn.Sequential(
+            nn.LayerNorm(192),
+            nn.Linear(in_features=192, out_features=192),
+            nn.GELU()
+        )
 
-        self.view_position = nn.Parameter(torch.zeros(1, 16, 768))
-        nn.init.trunc_normal_(self.view_position, std=0.02)
+        self.stage_3_projection = nn.Sequential(
+            nn.LayerNorm(384),
+            nn.Linear(in_features=384, out_features=192),
+            nn.GELU()
+        )
+
+        self.stage_4_projection = nn.Sequential(
+            nn.LayerNorm(768),
+            nn.Linear(in_features=768, out_features=192),
+            nn.GELU()
+        )
+
+        self.feature_norm = nn.LayerNorm(768)
+        self.channel_attention = nn.Linear(768, 768)
+
+        self.lstm = nn.LSTM(input_size=768, hidden_size=768, num_layers=1, batch_first=True)
 
         self.view_attention = nn.Linear(768, 16)
         self.dropout = nn.Dropout(p=0.1)
@@ -259,32 +256,56 @@ class Phase3(nn.Module):
 
 
     def encode(self, image):
-        features = self.backbone(image)
-        features = self.backbone_norm(features)
-        features = self.feature_pool(features)
-        features = self.feature_adapter(features)
+        features = self.backbone[0](image)
+
+        features = self.backbone[1](features)
+        stage_1_features = features
+
+        features = self.backbone[2](features)
+        features = self.backbone[3](features)
+        stage_2_features = features
+
+        features = self.backbone[4](features)
+        features = self.backbone[5](features)
+        stage_3_features = features
+
+        features = self.backbone[6](features)
+        features = self.backbone[7](features)
+        stage_4_features = features
+
+        # Multi-scale Feature
+        stage_1_features = self.global_pool(stage_1_features)
+        stage_2_features = self.global_pool(stage_2_features)
+        stage_3_features = self.global_pool(stage_3_features)
+        stage_4_features = self.global_pool(stage_4_features)
+
+        stage_1_features = stage_1_features.flatten(start_dim=1)
+        stage_2_features = stage_2_features.flatten(start_dim=1)
+        stage_3_features = stage_3_features.flatten(start_dim=1)
+        stage_4_features = stage_4_features.flatten(start_dim=1)
+
+        stage_1_features = self.stage_1_projection(stage_1_features)
+        stage_2_features = self.stage_2_projection(stage_2_features)
+        stage_3_features = self.stage_3_projection(stage_3_features)
+        stage_4_features = self.stage_4_projection(stage_4_features)
+
+        view_features = torch.cat(
+            [
+                stage_1_features,
+                stage_2_features,
+                stage_3_features,
+                stage_4_features
+            ],
+            dim=1
+        )
+
+        view_features = self.feature_norm(view_features)
 
         # Channel Attention
-        channel_weights = self.global_pool(features)
-        channel_weights = channel_weights.flatten(start_dim=1)
-        channel_weights = self.channel_attention(channel_weights)
-        channel_weights = channel_weights.unsqueeze(-1).unsqueeze(-1)
+        channel_weights = self.channel_attention(view_features)
+        channel_weights = torch.sigmoid(channel_weights)
 
-        features = features * channel_weights
-        features = features.contiguous()  # Ensure MPS-compatible memory layout.
-
-        # Multi-scale CNN
-        global_features = self.global_pool(features)
-        features_1x1 = self.branch_1x1(features)
-        features_3x3 = self.branch_3x3(features)
-        features_5x5 = self.branch_5x5(features)
-
-        global_features = global_features.flatten(start_dim=1)
-        features_1x1 = features_1x1.flatten(start_dim=1)
-        features_3x3 = features_3x3.flatten(start_dim=1)
-        features_5x5 = features_5x5.flatten(start_dim=1)
-
-        view_features = torch.cat([global_features, features_1x1, features_3x3, features_5x5], dim=1)
+        view_features = view_features * channel_weights
 
         return view_features
 
@@ -298,9 +319,7 @@ class Phase3(nn.Module):
             outputs.append(features)
 
         outputs = torch.stack(outputs, dim=1)
-        outputs = self.projection(outputs)
-        outputs = outputs + self.view_position
-        outputs = self.transformer(outputs)
+        outputs, _ = self.lstm(outputs)
 
         final_output = outputs[:, -1, :]
 
@@ -479,20 +498,23 @@ def test(phase):
     backbone_parameters = next(model.backbone.parameters())
     print(f"Backbone Gradient: {backbone_parameters.grad.norm().item()}")
 
-    if hasattr(model, "lstm"):  # Phase0, Phase1 and Phase2
+    if hasattr(model, "lstm"):  # Phase0, Phase1, Phase2 and Phase3
         print(f"LSTM Gradient: {model.lstm.weight_ih_l0.grad.norm().item()}")
 
-    if hasattr(model, "feature_adapter"):  # Phase1, Phase 2, Phase3 and Phase4
+    if hasattr(model, "feature_adapter"):  # Phase1, Phase2 and Phase4
         print(f"Adapter Gradient: {model.feature_adapter.weight.grad.norm().item()}")
 
-    if hasattr(model, "projection"):  # Phase3 and Phase4
+    if hasattr(model, "stage_1_projection"):  # Phase3
+        print(f"Stage Projection Gradient: {model.stage_1_projection[1].weight.grad.norm().item()}")
+
+    if hasattr(model, "projection"):  # Phase4
         print(f"Projection Gradient: {model.projection[0].weight.grad.norm().item()}")
 
-    if hasattr(model, "transformer"):  # Phase3 and Phase4
+    if hasattr(model, "transformer"):  # Phase4
         print(f"Transformer Gradient: {model.transformer.layers[0].self_attn.in_proj_weight.grad.norm().item()}")
 
-    if hasattr(model, "view_position"):  # Phase3
-        print(f"View Position Gradient: {model.view_position.grad.norm().item()}")
+    if hasattr(model, "channel_attention"):
+        print(f"Channel Attention Gradient: {model.channel_attention.weight.grad.norm().item()}")
 
     if hasattr(model, "view_attention"):
         print(f"View Attention Gradient: {model.view_attention.weight.grad.norm().item()}")
@@ -514,4 +536,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase=2)
+    test(phase=3)

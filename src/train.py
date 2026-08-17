@@ -138,7 +138,7 @@ def adaptive_scheduler(optimizer, phase, epochs):
     return scheduler
 
 
-def main(mode="train", phase=0):
+def main(mode="train", phase=3):
     torch.manual_seed(42)  # 재현성을 높이기 위해 seed를 42로 고정합니다.
 
     if torch.cuda.is_available():
@@ -163,11 +163,14 @@ def main(mode="train", phase=0):
     elif phase == 2:
         model = Phase1(pretrained=True).to(device)
     elif phase == 3:
+        # ConvNeXt의 네 Stage 특징을 결합하고, LSTM으로 16개 View를 순차적으로 처리합니다.
         model = Phase3(pretrained=True).to(device)
     elif phase == 4:
         model = Phase4(pretrained=True).to(device)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
+
+    print(f"Phase{phase}: {model.__class__.__name__}")
 
     if mode == "train":
         train_dataset = APSDataset(dataset=dataset, data_directory=data_directory, type="train", augment=True)
@@ -184,6 +187,7 @@ def main(mode="train", phase=0):
         patience = 10
         early_stop_point = 0
         start_epoch = 0
+        best_epoch = 0
 
         load_saved_model = False
 
@@ -202,6 +206,7 @@ def main(mode="train", phase=0):
             optimizer.load_state_dict(saved_checkpoint["optimizer_state_dict"])
             scheduler.load_state_dict(saved_checkpoint["scheduler_state_dict"])
             start_epoch = saved_checkpoint["epoch"]
+            best_epoch = saved_checkpoint["epoch"]
             best_validation_loss = saved_checkpoint["best_validation_loss"]
             early_stop_point = saved_checkpoint["early_stop_point"]
 
@@ -242,6 +247,7 @@ def main(mode="train", phase=0):
             # Checkpoint
             if validation_loss < best_validation_loss:
                 best_validation_loss = validation_loss
+                best_epoch = epoch + 1
                 early_stop_point = 0
 
                 checkpoint_state = {
@@ -275,6 +281,8 @@ def main(mode="train", phase=0):
         print()
         print(f"Train finished at {train_end_time_kst:%Y-%m-%d %H:%M:%S %Z}")
         print(f"Total Training Time: {train_elapsed_time / 3600:.2f} hours")
+        print(f"Best Epoch: {best_epoch}")
+        print(f"Best Validation Loss: {best_validation_loss}")
     elif mode == "smoke_test":
         sample = APSDataset(dataset=dataset, data_directory=data_directory, type="train", augment=False, sample_count=5)
 
@@ -288,8 +296,11 @@ def main(mode="train", phase=0):
         for epoch in range(sample_epochs):
             learning_rates = [parameter_group["lr"] for parameter_group in optimizer.param_groups]
 
-            print(f"Backbone Learning Rate: {learning_rates[0]:.2e}")
-            print(f"Task Learning Rate: {learning_rates[1]:.2e}")
+            if phase in (0, 1):
+                print(f"Learning Rate: {learning_rates[0]:.5f}")
+            else:
+                print(f"Backbone Learning Rate: {learning_rates[0]:.2e}")
+                print(f"Task Learning Rate: {learning_rates[1]:.2e}")
 
             sample_loss = train_one_epoch(model=model, data_loader=sample_loader, criterion=criterion, optimizer=optimizer, device=device)
 
@@ -328,4 +339,4 @@ def main(mode="train", phase=0):
 
 
 if __name__ == "__main__":
-    main(mode="train", phase=2)
+    main(mode="train", phase=3)

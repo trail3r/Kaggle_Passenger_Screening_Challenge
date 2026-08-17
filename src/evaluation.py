@@ -7,6 +7,7 @@ import pandas as pd
 from sklearn.metrics import average_precision_score
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import f1_score
+from sklearn.metrics import log_loss
 from sklearn.metrics import precision_score
 from sklearn.metrics import recall_score
 from sklearn.metrics import roc_auc_score
@@ -36,7 +37,7 @@ def synchronize(device):
         torch.mps.synchronize()
 
 
-def main(phase=0):
+def main(phase=3):
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif torch.backends.mps.is_available():
@@ -47,7 +48,7 @@ def main(phase=0):
 
     pin_memory = device.type == "cuda"
 
-    print(f"You are evaluation the model by using {device}!")
+    print(f"You are evaluating the model by using {device}!")
 
     if phase == 0:
         model = Phase0(pretrained=False)
@@ -56,18 +57,21 @@ def main(phase=0):
     elif phase == 2:
         model = Phase1(pretrained=False)
     elif phase == 3:
+        # ConvNeXt의 네 Stage 특징을 결합하고, LSTM으로 16개 View를 순차적으로 처리합니다.
         model = Phase3(pretrained=False)
     elif phase == 4:
         model = Phase4(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
-    CHECKPOINT = Path(f"models/phase{phase}.pt")
+    print(f"Phase{phase}: {model.__class__.__name__}")
+
+    checkpoint_path = Path(f"models/phase{phase}.pt")
 
     validation_dataset = APSDataset(dataset=DATASET, data_directory=DATA_DIRECTORY, type="validation", augment=False)
     validation_loader = DataLoader(validation_dataset, batch_size=2, shuffle=False, num_workers=0, pin_memory=pin_memory)
 
-    checkpoint = torch.load(CHECKPOINT, map_location="cpu", weights_only=True, mmap=True)
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True, mmap=True)
 
     print(f"Checkpoint Epoch: {checkpoint["epoch"]}")
     print(f"Saved Validation Loss: {checkpoint["best_validation_loss"]:.5f}")
@@ -176,6 +180,56 @@ def main(phase=0):
 
     RESULT.mkdir(parents=True, exist_ok=True)  # I don't want to re-inference!
 
+    zone_results = []
+
+    print()
+    print("Zone Validation Result")
+
+    for zone in range(17):
+        section = zone + 1
+
+        zone_labels = labels[:, zone]
+        zone_probabilities = probabilities[:, zone]
+        zone_predictions = predictions[:, zone]
+
+        zone_tn, zone_fp, zone_fn, zone_tp = confusion_matrix(zone_labels, zone_predictions, labels=[0, 1]).ravel()
+
+        zone_false_positive_rate = zone_fp / (zone_fp + zone_tn)
+        zone_false_negative_rate = zone_fn / (zone_fn + zone_tp)
+
+        zone_log_loss = log_loss(zone_labels, zone_probabilities, labels=[0, 1])
+        zone_roc_auc = roc_auc_score(zone_labels, zone_probabilities)
+        zone_pr_auc = average_precision_score(zone_labels, zone_probabilities)
+        zone_precision = precision_score(zone_labels, zone_predictions, zero_division=0)
+        zone_recall = recall_score(zone_labels, zone_predictions, zero_division=0)
+        zone_f1 = f1_score(zone_labels, zone_predictions, zero_division=0)
+
+        zone_result = {
+            "zone": section,
+            "positive_count": int(zone_labels.sum()),
+            "negative_count": int(len(zone_labels) - zone_labels.sum()),
+            "bce_log_loss": zone_log_loss,
+            "roc_auc": zone_roc_auc,
+            "pr_auc": zone_pr_auc,
+            "precision": zone_precision,
+            "recall": zone_recall,
+            "f1_score": zone_f1,
+            "false_positive_rate": zone_false_positive_rate,
+            "false_negative_rate": zone_false_negative_rate
+        }
+
+        zone_results.append(zone_result)
+
+        print(f"Zone {section:02d} | ", end="")
+        print(f"Loss: {zone_log_loss:.5f} | ", end="")
+        print(f"ROC-AUC: {zone_roc_auc:.5f} | ", end="")
+        print(f"PR-AUC: {zone_pr_auc:.5f} | ", end="")
+        print(f"F1: {zone_f1:.5f}")
+
+    zone_results = pd.DataFrame(zone_results)
+    zone_output = RESULT / f"phase{phase}_zone_metrics.csv"
+    zone_results.to_csv(zone_output, index=False)
+
     result = {"scan_id": scan_ids}
 
     for zone in range(17):
@@ -189,7 +243,8 @@ def main(phase=0):
     result.to_csv(output, index=False)
 
     print(f"Prediction results are successfully saved in {output}!")
+    print(f"Zone metrics are successfully saved in {zone_output}!")
 
 
 if __name__ == "__main__":
-    main(phase=0)
+    main(phase=3)
