@@ -346,6 +346,19 @@ def load_scan_data(infile):
     return scan
 
 
+def prepare_scan_data(scan, device):
+    scan = scan.to(device, non_blocking=device.type == "cuda")
+    scan = scan.repeat(1, 1, 3, 1, 1)  # 3채널로 복제
+
+    # Normalize every view with ImageNet channel statistics.
+    mean = scan.new_tensor([0.485, 0.456, 0.406]).view(1, 1, 3, 1, 1)
+    std = scan.new_tensor([0.229, 0.224, 0.225]).view(1, 1, 3, 1, 1)
+
+    scan = (scan - mean) / std
+
+    return scan
+
+
 # For PyTorch
 class APSDataset(Dataset):
     def __init__(self, dataset, data_directory, type, augment=False, sample_count=None):

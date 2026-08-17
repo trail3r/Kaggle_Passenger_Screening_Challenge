@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from src.dataset import APSDataset
+from src.dataset import prepare_scan_data
 
 from src.model import Phase0
 from src.model import Phase1
@@ -18,19 +19,6 @@ from src.model import Phase3
 # Notes: zero_grad() -> forward -> loss -> backward -> step
 
 KST = ZoneInfo("Asia/Seoul")
-
-
-def prepare_scan_data(scan, device):
-    scan = scan.to(device, non_blocking=device.type == "cuda")
-    scan = scan.repeat(1, 1, 3, 1, 1)  # 3채널로 복제
-
-    # Normalize every view with ImageNet channel statistics.
-    mean = scan.new_tensor([0.485, 0.456, 0.406]).view(1, 1, 3, 1, 1)
-    std = scan.new_tensor([0.229, 0.224, 0.225]).view(1, 1, 3, 1, 1)
-
-    scan = (scan - mean) / std
-
-    return scan
 
 
 def train_one_epoch(model, data_loader, criterion, optimizer, device):
@@ -265,4 +253,4 @@ def main(mode="train", phase=0):
 
 
 if __name__ == "__main__":
-    main(mode="train", phase=0)
+    main(mode="train", phase=1)

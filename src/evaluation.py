@@ -15,6 +15,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.dataset import APSDataset
+from src.dataset import prepare_scan_data
+
 from src.model import Phase0
 from src.model import Phase1
 from src.model import Phase2
@@ -91,7 +93,7 @@ def main(phase=0):
 
     with torch.inference_mode():
         for index, (scan, label, scan_id) in enumerate(validation_loader):
-            scan = scan.to(device, non_blocking=pin_memory)
+            scan = prepare_scan_data(scan, device)
             label = label.to(device, non_blocking=pin_memory)
 
             predict = model(scan)
@@ -188,4 +190,4 @@ def main(phase=0):
 
 
 if __name__ == "__main__":
-    main(phase=3)
+    main(phase=0)
