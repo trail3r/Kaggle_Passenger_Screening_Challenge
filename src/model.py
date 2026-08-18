@@ -263,7 +263,7 @@ class Phase3(nn.Module):
 
 
 class Phase4(nn.Module):
-    def __init__(self, pretrained=True, dim_feedforward=3072):
+    def __init__(self, pretrained=True):
         super().__init__()
 
         weights = ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
@@ -279,7 +279,7 @@ class Phase4(nn.Module):
         tx_encoder = nn.TransformerEncoderLayer(
             d_model=768,
             nhead=8,
-            dim_feedforward=dim_feedforward,
+            dim_feedforward=1536,
             dropout=0.1,
             activation="gelu",
             batch_first=True,
@@ -337,6 +337,156 @@ class Phase4(nn.Module):
         return result
 
 
+class Phase5(nn.Module):
+    def __init__(self, pretrained=True):
+        super().__init__()
+
+        weights = ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
+        convnext = convnext_tiny(weights=weights)
+
+        self.backbone = convnext.features
+        self.global_pooling = convnext.avgpool
+        self.backbone_normalization = convnext.classifier[0]
+
+        self.view_position = nn.Parameter(torch.zeros(1, 16, 768))
+        nn.init.trunc_normal_(self.view_position, std=0.02)
+
+        tx_encoder = nn.TransformerEncoderLayer(
+            d_model=768,
+            nhead=8,
+            dim_feedforward=3072,
+            dropout=0.1,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+            layer_norm_eps=1e-6
+        )
+
+        self.transformer = nn.TransformerEncoder(
+            encoder_layer=tx_encoder,
+            num_layers=1,
+            norm=nn.LayerNorm(768, eps=1e-6),
+            enable_nested_tensor=False
+        )
+
+        self.view_attention = nn.Linear(768, 1, bias=False)
+        self.dropout = nn.Dropout(p=0.1)
+        self.classifier = nn.Linear(768, 17)
+
+        nn.init.zeros_(self.view_attention.weight)
+        nn.init.zeros_(self.classifier.bias)
+
+
+    def encode(self, images):
+        features = self.backbone(images)
+        features = self.global_pooling(features)
+        features = self.backbone_normalization(features)
+        features = features.flatten(start_dim=1)
+
+        return features
+
+
+    def forward(self, scan):
+        batch_size, view_count, channels, height, width = scan.shape
+
+        images = scan.reshape(batch_size * view_count, channels, height, width)
+
+        view_features = self.encode(images)
+        view_features = view_features.reshape(batch_size, view_count, 768)
+
+        view_position = self.view_position[:, :view_count]
+
+        outputs = view_features + view_position
+        outputs = self.transformer(outputs)
+
+        attention_score = self.view_attention(outputs)
+        attention_score = attention_score.squeeze(-1)
+        attention_weights = torch.softmax(attention_score, dim=1)
+
+        scan_features = outputs * attention_weights.unsqueeze(-1)
+        scan_features = scan_features.sum(dim=1)
+
+        scan_features = self.dropout(scan_features)
+        result = self.classifier(scan_features)
+
+        return result
+
+
+class Phase6(nn.Module):
+    def __init__(self, pretrained=True):
+        super().__init__()
+
+        weights = ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
+        convnext = convnext_tiny(weights=weights)
+
+        self.backbone = convnext.features
+        self.global_pooling = convnext.avgpool
+        self.backbone_normalization = convnext.classifier[0]
+
+        self.view_position = nn.Parameter(torch.zeros(1, 16, 768))
+        nn.init.trunc_normal_(self.view_position, std=0.02)
+
+        tx_encoder = nn.TransformerEncoderLayer(
+            d_model=768,
+            nhead=8,
+            dim_feedforward=1536,
+            dropout=0.1,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+            layer_norm_eps=1e-6
+        )
+
+        self.transformer = tx_encoder
+        self.transformer_normalization = nn.LayerNorm(768, eps=1e-6)
+        self.transformer_depth = 2
+
+        self.view_attention = nn.Linear(768, 1, bias=False)
+        self.dropout = nn.Dropout(p=0.1)
+        self.classifier = nn.Linear(768, 17)
+
+        nn.init.zeros_(self.view_attention.weight)
+        nn.init.zeros_(self.classifier.bias)
+
+
+    def encode(self, images):
+        features = self.backbone(images)
+        features = self.global_pooling(features)
+        features = self.backbone_normalization(features)
+        features = features.flatten(start_dim=1)
+
+        return features
+
+
+    def forward(self, scan):
+        batch_size, view_count, channels, height, width = scan.shape
+
+        images = scan.reshape(batch_size * view_count, channels, height, width)
+
+        view_features = self.encode(images)
+        view_features = view_features.reshape(batch_size, view_count, 768)
+
+        view_position = self.view_position[:, :view_count]
+
+        outputs = view_features + view_position
+
+        for _ in range(self.transformer_depth):
+            outputs = self.transformer(outputs)
+
+        outputs = self.transformer_normalization(outputs)
+
+        attention_score = self.view_attention(outputs)
+        attention_score = attention_score.squeeze(-1)
+        attention_weights = torch.softmax(attention_score, dim=1)
+
+        scan_features = outputs * attention_weights.unsqueeze(-1)
+        scan_features = scan_features.sum(dim=1)
+
+        scan_features = self.dropout(scan_features)
+        result = self.classifier(scan_features)
+
+        return result
+
 
 def test(phase):
     torch.manual_seed(42)
@@ -366,13 +516,18 @@ def test(phase):
 
         height = 128
         width = 96
-    elif phase == "4a":
-        model = Phase4(pretrained=False, dim_feedforward=1536)
+    elif phase == 4:
+        model = Phase4(pretrained=False)
 
         height = 128
         width = 96
-    elif phase == "4b":
-        model = Phase4(pretrained=False, dim_feedforward=3072)
+    elif phase == 5:
+        model = Phase5(pretrained=False)
+
+        height = 128
+        width = 96
+    elif phase == 6:
+        model = Phase6(pretrained=False)
 
         height = 128
         width = 96
@@ -410,8 +565,12 @@ def test(phase):
     if hasattr(model, "view_attention"):
         print(f"View Attention Gradient: {model.view_attention.weight.grad.norm().item()}")
 
-    if hasattr(model, "transformer"):
-        print(f"Transformer Gradient: {model.transformer.layers[0].self_attn.in_proj_weight.grad.norm().item()}")
+    if phase in (4, 5):
+        gradient = model.transformer.layers[0].self_attn.in_proj_weight.grad
+        print(f"Transformer Gradient: {gradient.norm().item()}")
+    elif phase == 6:
+        gradient = model.transformer.self_attn.in_proj_weight.grad
+        print(f"Transformer Gradient: {gradient.norm().item()}")
 
     if hasattr(model, "view_position"):
         print(f"View Position Gradient: {model.view_position.grad.norm().item()}")
@@ -433,5 +592,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase="4a")
-    test(phase="4b")
+    test(phase=6)

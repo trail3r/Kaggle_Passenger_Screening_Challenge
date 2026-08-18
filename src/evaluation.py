@@ -22,6 +22,8 @@ from src.model import Phase0
 from src.model import Phase1
 from src.model import Phase3
 from src.model import Phase4
+from src.model import Phase5
+from src.model import Phase6
 
 
 DATA_DIRECTORY = Path("data")
@@ -37,7 +39,7 @@ def synchronize(device):
         torch.mps.synchronize()
 
 
-def main(phase="4b"):
+def main(phase):
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif torch.backends.mps.is_available():
@@ -58,10 +60,12 @@ def main(phase="4b"):
         model = Phase1(pretrained=False)
     elif phase == 3:
         model = Phase3(pretrained=False)
-    elif phase == "4a":
-        model = Phase4(pretrained=False, dim_feedforward=1536)
-    elif phase == "4b":
-        model = Phase4(pretrained=False, dim_feedforward=3072)
+    elif phase == 4:
+        model = Phase4(pretrained=False)
+    elif phase == 5:
+        model = Phase5(pretrained=False)
+    elif phase == 6:
+            model = Phase6(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -248,5 +252,4 @@ def main(phase="4b"):
 
 
 if __name__ == "__main__":
-    main(phase="4a")
-    main(phase="4b")
+    main(phase=6)
