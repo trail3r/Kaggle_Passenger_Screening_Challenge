@@ -21,6 +21,7 @@ from src.model import Phase6
 from src.model import Phase7
 from src.model import Phase8
 from src.model import Phase9
+from src.model import Phase10
 
 
 # Notes: zero_grad() -> forward -> loss -> backward -> step
@@ -118,8 +119,8 @@ def adaptive_optimizer(model, phase):
     )
 
     # !Temp! Test Code!
-    if phase in (7, 8, 9):
-        transformer_lr = 2e-4 if phase == 7 else 2.5e-4
+    if phase in (7, 8, 9, 10):
+        transformer_lr = 2e-4 if phase in (7, 10) else 2.5e-4
 
         backbone_parameters = []
         transformer_parameters = []
@@ -217,6 +218,8 @@ def main(phase, mode="train"):
         model = Phase8(pretrained=True).to(device)
     elif phase == 9:
         model = Phase9(pretrained=True).to(device)
+    elif phase == 10:
+        model = Phase10(pretrained=True).to(device)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -289,7 +292,7 @@ def main(phase, mode="train"):
 
             if phase in (0, 1):
                 print(f"Learning Rate: {learning_rates[0]:.5f}")
-            elif phase in (7, 8, 9):
+            elif phase in (7, 8, 9, 10):
                 print(f"Backbone Learning Rate: {learning_rates[0]:.2e} | Transformer Learning Rate: {learning_rates[1]:.2e} | Task Learning Rate: {learning_rates[2]:.2e}")
             else:
                 print(f"Backbone Learning Rate: {learning_rates[0]:.2e} | Task Learning Rate: {learning_rates[1]:.2e}")
@@ -350,7 +353,7 @@ def main(phase, mode="train"):
 
             if phase in (0, 1):
                 print(f"Learning Rate: {learning_rates[0]:.5f}")
-            elif phase in (7, 8, 9):
+            elif phase in (7, 8, 9, 10):
                 print(f"Backbone Learning Rate: {learning_rates[0]:.2e} | Transformer Learning Rate: {learning_rates[1]:.2e} | Task Learning Rate: {learning_rates[2]:.2e}")
             else:
                 print(f"Backbone Learning Rate: {learning_rates[0]:.2e}")
@@ -393,4 +396,4 @@ def main(phase, mode="train"):
 
 
 if __name__ == "__main__":
-    main(phase=9)
+    main(phase=10)

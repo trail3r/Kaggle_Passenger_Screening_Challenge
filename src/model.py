@@ -763,6 +763,84 @@ class Phase9(nn.Module):
         return result
 
 
+# Phase10
+# Phase7과 동일한 1-layer Transformer에서 FFN 크기만 3072차원에서 1536차원으로 줄였습니다.
+# 동일한 Learning Rate 조건에서 Transformer FFN 크기가 성능에 미치는 영향을 비교합니다.
+class Phase10(nn.Module):
+    def __init__(self, pretrained=True):
+        super().__init__()
+
+        weights = ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
+        convnext = convnext_tiny(weights=weights)
+
+        self.backbone = convnext.features
+        self.global_pooling = convnext.avgpool
+        self.backbone_normalization = convnext.classifier[0]
+
+        self.view_position = nn.Parameter(torch.zeros(1, 16, 768))
+        nn.init.trunc_normal_(self.view_position, std=0.02)
+
+        tx_encoder = nn.TransformerEncoderLayer(
+            d_model=768,
+            nhead=8,
+            dim_feedforward=1536,
+            dropout=0.1,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+            layer_norm_eps=1e-6
+        )
+
+        self.transformer = nn.TransformerEncoder(
+            encoder_layer=tx_encoder,
+            num_layers=1,
+            norm=nn.LayerNorm(768, eps=1e-6),
+            enable_nested_tensor=False
+        )
+
+        self.view_attention = nn.Linear(768, 1, bias=False)
+        self.dropout = nn.Dropout(p=0.1)
+        self.classifier = nn.Linear(768, 17)
+
+        nn.init.zeros_(self.view_attention.weight)
+        nn.init.zeros_(self.classifier.bias)
+
+
+    def encode(self, images):
+        features = self.backbone(images)
+        features = self.global_pooling(features)
+        features = self.backbone_normalization(features)
+        features = features.flatten(start_dim=1)
+
+        return features
+
+
+    def forward(self, scan):
+        batch_size, view_count, channels, height, width = scan.shape
+
+        images = scan.reshape(batch_size * view_count, channels, height, width)
+
+        view_features = self.encode(images)
+        view_features = view_features.reshape(batch_size, view_count, 768)
+
+        view_position = self.view_position[:, :view_count]
+
+        outputs = view_features + view_position
+        outputs = self.transformer(outputs)
+
+        attention_score = self.view_attention(outputs)
+        attention_score = attention_score.squeeze(-1)
+        attention_weights = torch.softmax(attention_score, dim=1)
+
+        scan_features = outputs * attention_weights.unsqueeze(-1)
+        scan_features = scan_features.sum(dim=1)
+
+        scan_features = self.dropout(scan_features)
+        result = self.classifier(scan_features)
+
+        return result
+
+
 # Naming History
 # 이전 Phase4a는 현재 Phase4, 이전 Phase4b는 현재 Phase5로 이름을 변경하였습니다.
 # 이후 연구 과정에서 이루어지는 실험 조건마다 Phase가 하나씩 증가합니다.
@@ -882,6 +960,8 @@ def test(phase):
         model = Phase8(pretrained=False)
     elif phase == 9:
         model = Phase9(pretrained=False)
+    elif phase == 10:
+        model = Phase10(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -919,7 +999,7 @@ def test(phase):
     if hasattr(model, "view_attention"):
         print(f"View Attention Gradient: {model.view_attention.weight.grad.norm().item()}")
 
-    if phase in (4, 5, 7):
+    if phase in (4, 5, 7, 10):
         gradient = model.transformer.layers[0].self_attn.in_proj_weight.grad
         print(f"Transformer Gradient: {gradient.norm().item()}")
     elif phase in (6, 8, 9):
@@ -949,4 +1029,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase=9)
+    test(phase=10)
