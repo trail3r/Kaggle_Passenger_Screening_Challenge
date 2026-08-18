@@ -18,6 +18,7 @@ from src.model import Phase3
 from src.model import Phase4
 from src.model import Phase5
 from src.model import Phase6
+from src.model import Phase7
 
 
 # Notes: zero_grad() -> forward -> loss -> backward -> step
@@ -172,6 +173,8 @@ def main(phase, mode="train"):
         model = Phase5(pretrained=True).to(device)
     elif phase == 6:
         model = Phase6(pretrained=True).to(device)
+    elif phase == 7:
+        model = Phase7(pretrained=True).to(device)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -344,4 +347,4 @@ def main(phase, mode="train"):
 
 
 if __name__ == "__main__":
-    main(phase=6)
+    main(phase=7)

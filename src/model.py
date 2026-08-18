@@ -488,55 +488,121 @@ class Phase6(nn.Module):
         return result
 
 
+class Phase7(nn.Module):
+    def __init__(self, pretrained=True):
+        super().__init__()
+
+        weights = ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
+        convnext = convnext_tiny(weights=weights)
+
+        self.backbone = convnext.features
+        self.global_pooling = convnext.avgpool
+        self.backbone_normalization = convnext.classifier[0]
+
+        self.view_position = nn.Parameter(torch.zeros(1, 16, 768))
+        nn.init.trunc_normal_(self.view_position, std=0.02)
+
+        tx_encoder = nn.TransformerEncoderLayer(
+            d_model=768,
+            nhead=8,
+            dim_feedforward=1536,
+            dropout=0.1,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+            layer_norm_eps=1e-6
+        )
+
+        self.transformer = tx_encoder
+        self.transformer_normalization = nn.LayerNorm(768, eps=1e-6)
+
+        self.view_attention = nn.Linear(768, 1, bias=False)
+        self.dropout = nn.Dropout(p=0.1)
+        self.classifier = nn.Linear(768, 17)
+
+        self.gate = nn.Linear(768 * 2, 1)
+        nn.init.zeros_(self.gate.weight)
+        nn.init.zeros_(self.gate.bias)
+
+        nn.init.zeros_(self.view_attention.weight)
+        nn.init.zeros_(self.classifier.bias)
+
+
+    def encode(self, images):
+        features = self.backbone(images)
+        features = self.global_pooling(features)
+        features = self.backbone_normalization(features)
+        features = features.flatten(start_dim=1)
+
+        return features
+
+
+    def forward(self, scan):
+        batch_size, view_count, channels, height, width = scan.shape
+
+        images = scan.reshape(batch_size * view_count, channels, height, width)
+
+        view_features = self.encode(images)
+        view_features = view_features.reshape(batch_size, view_count, 768)
+
+        view_position = self.view_position[:, :view_count]
+
+        outputs = view_features + view_position
+
+        outputs_1 = self.transformer(outputs)
+        outputs_2 = self.transformer(outputs_1)
+
+        gate_input = torch.cat([outputs_1, outputs_2], dim=-1)
+        gate = torch.sigmoid(self.gate(gate_input))
+
+        outputs = (1 - gate) * outputs_1 + gate * outputs_2
+        outputs = self.transformer_normalization(outputs)
+
+        attention_score = self.view_attention(outputs)
+        attention_score = attention_score.squeeze(-1)
+        attention_weights = torch.softmax(attention_score, dim=1)
+
+        scan_features = outputs * attention_weights.unsqueeze(-1)
+        scan_features = scan_features.sum(dim=1)
+
+        scan_features = self.dropout(scan_features)
+        result = self.classifier(scan_features)
+
+        return result
+
+
 def test(phase):
     torch.manual_seed(42)
 
     if phase == 0:
         model = Phase0(pretrained=False)
-
-        # Phase0는 Adaptive Pooling을 사용하지 않아 원본 크기를 전달합니다.
-        height = 661
-        width = 512
     elif phase == 1:
         model = Phase1(pretrained=False)  # Optimizer로 SGD를 사용합니다.
-
-        height = 128
-        width = 96
     elif phase == 2:
         # Phase0에서 학습 조건을 모두 유지한 채 Backbone을 ConvNeXt-Tiny로 교체하였습니다.
         # 실험 결과, Backbone 교체만으로는 유의미한 성능 상승을 관찰하지 못 하였습니다.
         # Phase1은 Phase0의 학습 조건을 유지하고 Backbone만 ConvNeXt-Tiny로 교체하였습니다.
         # Phase2는 Phase1의 모델 구조를 유지하고 ConvNeXt에 맞게 학습 조건을 변경합니다.
         model = Phase1(pretrained=False)
-
-        height = 128
-        width = 96
     elif phase == 3:
         model = Phase3(pretrained=False)
-
-        height = 128
-        width = 96
     elif phase == 4:
         model = Phase4(pretrained=False)
-
-        height = 128
-        width = 96
     elif phase == 5:
         model = Phase5(pretrained=False)
-
-        height = 128
-        width = 96
     elif phase == 6:
         model = Phase6(pretrained=False)
-
-        height = 128
-        width = 96
+    elif phase == 7:
+        model = Phase7(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
+    image_size = (661, 512) if phase == 0 else (128, 96)
+    # Phase0는 Multi-scale feature map을 그대로 펼치므로 원본 입력 크기를 사용해야 합니다.
+
     model.train()
 
-    scan = torch.randn(1, 16, 3, height, width)
+    scan = torch.randn(1, 16, 3, *image_size)
     labels = torch.randint(low=0, high=2, size=(1, 17)).float()
 
     criterion = nn.BCEWithLogitsLoss()
@@ -568,12 +634,15 @@ def test(phase):
     if phase in (4, 5):
         gradient = model.transformer.layers[0].self_attn.in_proj_weight.grad
         print(f"Transformer Gradient: {gradient.norm().item()}")
-    elif phase == 6:
+    elif phase in (6, 7):
         gradient = model.transformer.self_attn.in_proj_weight.grad
         print(f"Transformer Gradient: {gradient.norm().item()}")
 
     if hasattr(model, "view_position"):
         print(f"View Position Gradient: {model.view_position.grad.norm().item()}")
+
+    if hasattr(model, "gate"):
+        print(f"Gate Gradient: {model.gate.weight.grad.norm().item()}")
 
     print(f"Classifier Gradient: {model.classifier.weight.grad.norm().item()}")
 
@@ -592,4 +661,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase=6)
+    test(phase=7)
