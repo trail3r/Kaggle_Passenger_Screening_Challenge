@@ -10,6 +10,11 @@ from torchvision.models import convnext_tiny
 
 # Notes: zero_grad -> forward -> loss -> backward -> step
 
+
+# Phase0
+# Kaggle Competition: Passenger Screening Algorithm Challenge에서 10위 공개 솔루션을 참고하여 구현하였습니다.
+# ResNet-50(Pretrained), Channel Attention, Multi-scale CNN, LSTM, View Attention 구조를 PyTorch로
+# 재구성한 Baseline 모델입니다.
 class Phase0(nn.Module):
     def __init__(self, pretrained=True):
         super().__init__()
@@ -105,6 +110,11 @@ class Phase0(nn.Module):
         return result
 
 
+# Phase1
+# Phase0의 구조와 학습 조건을 유지한 채 Backbone만 ConvNeXt-Tiny로 교체하였습니다.
+# ConvNeXt 출력을 기존 구조에 맞춰 연결하기 위해 768채널을 2048채널로 변환하였습니다.
+# 학습 실패: ConvNeXt의 표현이 학습 중 약해지고 예측이 데이터의 양성 비율 수준으로 수렴하였습니다.
+# 추정 원인: ResNet-50에 맞춰진 SGD 학습 조건과 Head 연결 방식이 ConvNeXt와 적합하지 않았을 수 있습니다.
 class Phase1(nn.Module):
     def __init__(self, pretrained=True):
         super().__init__()
@@ -209,6 +219,16 @@ class Phase1(nn.Module):
         return result
 
 
+# Phase2
+# Phase1과 동일한 모델을 사용하고 Optimizer와 Learning Rate만 변경하였습니다.
+# SGD 대신 AdamW를 사용하고 Backbone과 새로 추가한 레이어의 Learning Rate를 분리하였습니다.
+# 학습 실패: 학습 조건만 변경해서는 Phase1의 데이터의 양성 비율 수준으로 수렴하는 문제를 해결하지 못했습니다.
+
+
+# Phase3
+# ConvNeXt의 768차원 출력을 직접 사용하도록 모델 구조를 재설계하였습니다.
+# 각 View의 특징을 LSTM으로 순차 처리하고 하나의 Attention 평가 함수를 모든 View에 공유합니다.
+# Attention 평가 함수를 하나로 변경한 것은 추후 입력 View 개수를 줄여보는 상황을 고려하였습니다.
 class Phase3(nn.Module):
     def __init__(self, pretrained=True):
         super().__init__()
@@ -262,6 +282,10 @@ class Phase3(nn.Module):
         return result
 
 
+# Phase4
+# Phase3의 LSTM을 1-layer Transformer로 교체하였습니다.
+# LSTM과 파라미터 수를 비슷하게 맞추기 위해 FFN을 1536차원으로 설정하였습니다.
+# Transformer가 입력된 View의 순서를 구분할 수 있도록 Learned View Position을 추가하였습니다.
 class Phase4(nn.Module):
     def __init__(self, pretrained=True):
         super().__init__()
@@ -337,6 +361,10 @@ class Phase4(nn.Module):
         return result
 
 
+# Phase5
+# Transformer의 표현 용량 증가가 성능에 미치는 영향을 확인하기 위해 Phase4의 Transformer FFN 크기를 1536차원에서 3072차원으로 확장하였습니다.
+# 학습 실패: 학습용 및 검증용 데이터셋에 대한 손실이 데이터의 양성 비율 수준에 정체되고 모든 구역을 음성으로 예측하였습니다.
+# FFN 크기와 Learning Rate의 영향을 구분하기 위해 Phase7에서 더 작은 Learning Rate로 재실험을 수행하였습니다.
 class Phase5(nn.Module):
     def __init__(self, pretrained=True):
         super().__init__()
@@ -412,6 +440,10 @@ class Phase5(nn.Module):
         return result
 
 
+# Phase6
+# FFN 크기가 1536차원인 동일한 Transformer layer를 같은 가중치로 2번 반복하여 사용하였습니다.
+# 독립적인 Transformer를 2-layer로 통과하는 것이 아닌 같은 가중치를 가진 하나의 Transformer를 2번 반복 통과하는 구조입니다.
+# 학습 실패: 손실이 개선되는 양상을 보였지만 데이터의 양성 비율 수준에서 벗어나지 못해 Epoch 12에서 학습을 중단하였습니다.
 class Phase6(nn.Module):
     def __init__(self, pretrained=True):
         super().__init__()
@@ -488,6 +520,9 @@ class Phase6(nn.Module):
         return result
 
 
+# Phase7
+# Phase5와 동일한 FFN 3072차원 모델에서 Transformer의 Learning Rate만 2e-4로 낮추었습니다.
+# Phase5의 실패에 Transformer의 Learning Rate가 영향을 주었는지 확인합니다.
 class Phase7(nn.Module):
     def __init__(self, pretrained=True):
         super().__init__()
@@ -563,6 +598,9 @@ class Phase7(nn.Module):
         return result
 
 
+# Phase8
+# Phase6와 동일하게 동일한 가중치를 가진 Transformer를 2번 통과하는 모델을 사용합니다.
+# Transformer의 Learning Rate를 2.5e-4로 줄여 반복 사용되는 파라미터의 학습이 과도했는지 확인합니다.
 class Phase8(nn.Module):
     def __init__(self, pretrained=True):
         super().__init__()
@@ -639,10 +677,102 @@ class Phase8(nn.Module):
         return result
 
 
+# Phase9
+# Phase8의 첫 번째와 두 번째 Transformer 출력을 학습 가능한 View별 Gate로 결합합니다.
+# Gate는 sigmoid(-2)로 초기화하여 첫 번째 Transformer의 출력을 약 88%, 두 번째 Transformer의 출력을 약 12% 사용하며 학습을 시작합니다.
+class Phase9(nn.Module):
+    def __init__(self, pretrained=True):
+        super().__init__()
+
+        weights = ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
+        convnext = convnext_tiny(weights=weights)
+
+        self.backbone = convnext.features
+        self.global_pooling = convnext.avgpool
+        self.backbone_normalization = convnext.classifier[0]
+
+        self.view_position = nn.Parameter(torch.zeros(1, 16, 768))
+        nn.init.trunc_normal_(self.view_position, std=0.02)
+
+        tx_encoder = nn.TransformerEncoderLayer(
+            d_model=768,
+            nhead=8,
+            dim_feedforward=1536,
+            dropout=0.1,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+            layer_norm_eps=1e-6
+        )
+
+        self.transformer = tx_encoder
+        self.transformer_normalization = nn.LayerNorm(768, eps=1e-6)
+
+        self.view_attention = nn.Linear(768, 1, bias=False)
+        self.dropout = nn.Dropout(p=0.1)
+        self.classifier = nn.Linear(768, 17)
+
+        self.gate = nn.Linear(768 * 2, 1)
+        nn.init.zeros_(self.gate.weight)
+        nn.init.constant_(self.gate.bias, -2.0)
+
+        nn.init.zeros_(self.view_attention.weight)
+        nn.init.zeros_(self.classifier.bias)
+
+
+    def encode(self, images):
+        features = self.backbone(images)
+        features = self.global_pooling(features)
+        features = self.backbone_normalization(features)
+        features = features.flatten(start_dim=1)
+
+        return features
+
+
+    def forward(self, scan):
+        batch_size, view_count, channels, height, width = scan.shape
+
+        images = scan.reshape(batch_size * view_count, channels, height, width)
+
+        view_features = self.encode(images)
+        view_features = view_features.reshape(batch_size, view_count, 768)
+
+        view_position = self.view_position[:, :view_count]
+
+        outputs = view_features + view_position
+
+        outputs_1 = self.transformer(outputs)
+        outputs_2 = self.transformer(outputs_1)
+
+        gate_input = torch.cat([outputs_1, outputs_2], dim=-1)
+        gate = torch.sigmoid(self.gate(gate_input))
+
+        outputs = (1 - gate) * outputs_1 + gate * outputs_2
+        outputs = self.transformer_normalization(outputs)
+
+        attention_score = self.view_attention(outputs)
+        attention_score = attention_score.squeeze(-1)
+        attention_weights = torch.softmax(attention_score, dim=1)
+
+        scan_features = outputs * attention_weights.unsqueeze(-1)
+        scan_features = scan_features.sum(dim=1)
+
+        scan_features = self.dropout(scan_features)
+        result = self.classifier(scan_features)
+
+        return result
+
+
+# Naming History
+# 이전 Phase4a는 현재 Phase4, 이전 Phase4b는 현재 Phase5로 이름을 변경하였습니다.
+# 이후 연구 과정에서 이루어지는 실험 조건마다 Phase가 하나씩 증가합니다.
+# Unknown 클래스는 초기 Gate 값이 0.5였던 폐기된 실험용 Prototype이었으며,
+# Gate의 학습 가능성을 확인하기 위한 모델로 정식 Phase에 포함시키지 않았습니다.
 class Unknown(nn.Module):
     """! Not In Use !
-    동일한 트랜스포머를 2개 레이어로 배치하고 게이트 연산을 적용한 사전 실험에서 학습 가능성을 확인했지만,
-    통제된 조건에서 이루어진 비교가 아니기 때문에서 실험 결과에서 배제하였습니다."""
+    동일한 Transformer layer를 2번 반복하고 게이트 연산을 적용한 사전 실험입니다.
+    학습 가능성을 확인했지만, 통제된 조건에서 이루어진 비교가 아니기 때문에서 실험 결과에서 배제하였습니다.
+    """
     def __init__(self, pretrained=True):
         super().__init__()
 
@@ -750,6 +880,8 @@ def test(phase):
         model = Phase7(pretrained=False)
     elif phase == 8:
         model = Phase8(pretrained=False)
+    elif phase == 9:
+        model = Phase9(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -790,7 +922,7 @@ def test(phase):
     if phase in (4, 5, 7):
         gradient = model.transformer.layers[0].self_attn.in_proj_weight.grad
         print(f"Transformer Gradient: {gradient.norm().item()}")
-    elif phase in (6, 8):
+    elif phase in (6, 8, 9):
         gradient = model.transformer.self_attn.in_proj_weight.grad
         print(f"Transformer Gradient: {gradient.norm().item()}")
 
@@ -817,4 +949,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase=7)
+    test(phase=9)
