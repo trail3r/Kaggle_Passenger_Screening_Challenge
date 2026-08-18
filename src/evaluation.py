@@ -25,6 +25,7 @@ from src.model import Phase4
 from src.model import Phase5
 from src.model import Phase6
 from src.model import Phase7
+from src.model import Phase8
 
 
 DATA_DIRECTORY = Path("data")
@@ -69,6 +70,8 @@ def main(phase):
         model = Phase6(pretrained=False)
     elif phase == 7:
         model = Phase7(pretrained=False)
+    elif phase == 8:
+        model = Phase8(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 

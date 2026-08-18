@@ -19,6 +19,7 @@ from src.model import Phase4
 from src.model import Phase5
 from src.model import Phase6
 from src.model import Phase7
+from src.model import Phase8
 
 
 # Notes: zero_grad() -> forward -> loss -> backward -> step
@@ -114,7 +115,43 @@ def adaptive_optimizer(model, phase):
         betas=(0.9, 0.999),
         weight_decay=0.05
     )
-    # Does it really have more readability? I have no idea...
+
+    # !Temp! Test Code!
+    if phase in (7, 8):
+        transformer_lr = 2e-4 if phase == 7 else 2.5e-4
+
+        backbone_parameters = []
+        transformer_parameters = []
+        task_parameters = []
+
+        for name, parameter in model.named_parameters():
+            if name.startswith("backbone"):
+                backbone_parameters.append(parameter)
+            elif name.startswith("transformer"):
+                transformer_parameters.append(parameter)
+            else:
+                task_parameters.append(parameter)
+
+        optimizer = torch.optim.AdamW(
+            [
+                {
+                    "params": backbone_parameters,
+                    "lr": 5e-5
+                },
+                {
+                    "params": transformer_parameters,
+                    "lr": transformer_lr
+                },
+                {
+                    "params": task_parameters,
+                    "lr": 5e-4
+                }
+            ],
+            betas=(0.9, 0.999),
+            weight_decay=0.05
+        )
+
+
 
     print(f"Optimizer: {optimizer.__class__.__name__}")
 
@@ -175,6 +212,8 @@ def main(phase, mode="train"):
         model = Phase6(pretrained=True).to(device)
     elif phase == 7:
         model = Phase7(pretrained=True).to(device)
+    elif phase == 8:
+        model = Phase8(pretrained=True).to(device)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -247,6 +286,8 @@ def main(phase, mode="train"):
 
             if phase in (0, 1):
                 print(f"Learning Rate: {learning_rates[0]:.5f}")
+            elif phase in (7, 8):
+                print(f"Backbone Learning Rate: {learning_rates[0]:.2e} | Transformer Learning Rate: {learning_rates[1]:.2e} | Task Learning Rate: {learning_rates[2]:.2e}")
             else:
                 print(f"Backbone Learning Rate: {learning_rates[0]:.2e} | Task Learning Rate: {learning_rates[1]:.2e}")
 
@@ -306,6 +347,8 @@ def main(phase, mode="train"):
 
             if phase in (0, 1):
                 print(f"Learning Rate: {learning_rates[0]:.5f}")
+            elif phase in (7, 8):
+                print(f"Backbone Learning Rate: {learning_rates[0]:.2e} | Transformer Learning Rate: {learning_rates[1]:.2e} | Task Learning Rate: {learning_rates[2]:.2e}")
             else:
                 print(f"Backbone Learning Rate: {learning_rates[0]:.2e}")
                 print(f"Task Learning Rate: {learning_rates[1]:.2e}")
