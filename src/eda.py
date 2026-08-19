@@ -17,15 +17,13 @@ from src.dataset import show_2d_views
 
 COLUMNS = [f"zone_{zone}" for zone in range(1, 18)]
 
+
 def summarize_zones(manifest):
     """Zone별 위험물 양성 데이터 개수와 비율을 확인합니다."""
     danger_zone_counts = manifest[COLUMNS].sum()  # Zone별 위험물 양성 데이터 개수를 계산합니다.
     danger_zone_rates = manifest[COLUMNS].mean()  # Zone별 위험물 양성 데이터 비율을 계산합니다.
 
-    summary = pd.DataFrame({
-        "danger_zone_count": danger_zone_counts,
-        "danger_zone_rates": danger_zone_rates
-    })
+    summary = pd.DataFrame({"danger_zone_count": danger_zone_counts, "danger_zone_rates": danger_zone_rates})
 
     return summary
 

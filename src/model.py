@@ -7,7 +7,6 @@ from torchvision.models import resnet50
 from torchvision.models import ConvNeXt_Tiny_Weights
 from torchvision.models import convnext_tiny
 
-
 # Notes: zero_grad -> forward -> loss -> backward -> step
 
 
@@ -30,19 +29,19 @@ class Phase0(nn.Module):
         self.branch_1x1 = nn.Sequential(
             nn.Conv2d(in_channels=2048, out_channels=512, kernel_size=1, stride=1, padding=0),
             nn.ReLU(),
-            nn.BatchNorm2d(512)
+            nn.BatchNorm2d(512),
         )
 
         self.branch_3x3 = nn.Sequential(
             nn.Conv2d(in_channels=2048, out_channels=256, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.BatchNorm2d(256)
+            nn.BatchNorm2d(256),
         )
 
         self.branch_5x5 = nn.Sequential(
             nn.Conv2d(in_channels=2048, out_channels=128, kernel_size=5, stride=3, padding=2),
             nn.ReLU(),
-            nn.BatchNorm2d(128)
+            nn.BatchNorm2d(128),
         )
 
         self.global_pool = nn.AdaptiveAvgPool2d(1)
@@ -54,7 +53,6 @@ class Phase0(nn.Module):
         self.view_attention = nn.Linear(768, 16)
         self.dropout = nn.Dropout(p=0.1)
         self.classifier = nn.Linear(768, 17)
-
 
     def encode(self, image):
         features = self.backbone(image)
@@ -81,8 +79,6 @@ class Phase0(nn.Module):
         view_features = torch.cat([global_features, features_1x1, features_3x3, features_5x5], dim=1)
 
         return view_features
-
-
 
     def forward(self, scan):
         outputs = []
@@ -133,19 +129,19 @@ class Phase1(nn.Module):
         self.branch_1x1 = nn.Sequential(
             nn.Conv2d(in_channels=2048, out_channels=512, kernel_size=1, stride=1, padding=0),
             nn.ReLU(),
-            nn.BatchNorm2d(512)
+            nn.BatchNorm2d(512),
         )
 
         self.branch_3x3 = nn.Sequential(
             nn.Conv2d(in_channels=2048, out_channels=256, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.BatchNorm2d(256)
+            nn.BatchNorm2d(256),
         )
 
         self.branch_5x5 = nn.Sequential(
             nn.Conv2d(in_channels=2048, out_channels=128, kernel_size=5, stride=3, padding=2),
             nn.ReLU(),
-            nn.BatchNorm2d(128)
+            nn.BatchNorm2d(128),
         )
 
         self.global_pool = nn.AdaptiveAvgPool2d(1)
@@ -157,7 +153,6 @@ class Phase1(nn.Module):
         self.view_attention = nn.Linear(768, 16)
         self.dropout = nn.Dropout(p=0.1)
         self.classifier = nn.Linear(768, 17)
-
 
     def encode(self, image):
         features = self.backbone(image)
@@ -189,7 +184,6 @@ class Phase1(nn.Module):
 
         return view_features
 
-
     def forward(self, scan):
         outputs = []
 
@@ -206,10 +200,7 @@ class Phase1(nn.Module):
         attention_score = self.view_attention(final_output)
         attention_weights = torch.softmax(attention_score, dim=1)
 
-        scan_features = torch.bmm(
-            attention_weights.unsqueeze(1),
-            outputs
-        )
+        scan_features = torch.bmm(attention_weights.unsqueeze(1), outputs)
         scan_features = scan_features.squeeze(1)
 
         scan_features = self.dropout(scan_features)
@@ -249,7 +240,6 @@ class Phase3(nn.Module):
         nn.init.zeros_(self.view_attention.weight)
         nn.init.zeros_(self.classifier.bias)
 
-
     def encode(self, images):
         features = self.backbone(images)
         features = self.global_pooling(features)
@@ -257,7 +247,6 @@ class Phase3(nn.Module):
         features = features.flatten(start_dim=1)
 
         return features
-
 
     def forward(self, scan):
         batch_size, view_count, channels, height, width = scan.shape
@@ -308,14 +297,11 @@ class Phase4(nn.Module):
             activation="gelu",
             batch_first=True,
             norm_first=True,
-            layer_norm_eps=1e-6
+            layer_norm_eps=1e-6,
         )
 
         self.transformer = nn.TransformerEncoder(
-            encoder_layer=tx_encoder,
-            num_layers=1,
-            norm=nn.LayerNorm(768, eps=1e-6),
-            enable_nested_tensor=False
+            encoder_layer=tx_encoder, num_layers=1, norm=nn.LayerNorm(768, eps=1e-6), enable_nested_tensor=False
         )
 
         self.view_attention = nn.Linear(768, 1, bias=False)
@@ -325,7 +311,6 @@ class Phase4(nn.Module):
         nn.init.zeros_(self.view_attention.weight)
         nn.init.zeros_(self.classifier.bias)
 
-
     def encode(self, images):
         features = self.backbone(images)
         features = self.global_pooling(features)
@@ -333,7 +318,6 @@ class Phase4(nn.Module):
         features = features.flatten(start_dim=1)
 
         return features
-
 
     def forward(self, scan):
         batch_size, view_count, channels, height, width = scan.shape
@@ -387,14 +371,11 @@ class Phase5(nn.Module):
             activation="gelu",
             batch_first=True,
             norm_first=True,
-            layer_norm_eps=1e-6
+            layer_norm_eps=1e-6,
         )
 
         self.transformer = nn.TransformerEncoder(
-            encoder_layer=tx_encoder,
-            num_layers=1,
-            norm=nn.LayerNorm(768, eps=1e-6),
-            enable_nested_tensor=False
+            encoder_layer=tx_encoder, num_layers=1, norm=nn.LayerNorm(768, eps=1e-6), enable_nested_tensor=False
         )
 
         self.view_attention = nn.Linear(768, 1, bias=False)
@@ -404,7 +385,6 @@ class Phase5(nn.Module):
         nn.init.zeros_(self.view_attention.weight)
         nn.init.zeros_(self.classifier.bias)
 
-
     def encode(self, images):
         features = self.backbone(images)
         features = self.global_pooling(features)
@@ -412,7 +392,6 @@ class Phase5(nn.Module):
         features = features.flatten(start_dim=1)
 
         return features
-
 
     def forward(self, scan):
         batch_size, view_count, channels, height, width = scan.shape
@@ -466,7 +445,7 @@ class Phase6(nn.Module):
             activation="gelu",
             batch_first=True,
             norm_first=True,
-            layer_norm_eps=1e-6
+            layer_norm_eps=1e-6,
         )
 
         self.transformer = tx_encoder
@@ -480,7 +459,6 @@ class Phase6(nn.Module):
         nn.init.zeros_(self.view_attention.weight)
         nn.init.zeros_(self.classifier.bias)
 
-
     def encode(self, images):
         features = self.backbone(images)
         features = self.global_pooling(features)
@@ -488,7 +466,6 @@ class Phase6(nn.Module):
         features = features.flatten(start_dim=1)
 
         return features
-
 
     def forward(self, scan):
         batch_size, view_count, channels, height, width = scan.shape
@@ -545,14 +522,11 @@ class Phase7(nn.Module):
             activation="gelu",
             batch_first=True,
             norm_first=True,
-            layer_norm_eps=1e-6
+            layer_norm_eps=1e-6,
         )
 
         self.transformer = nn.TransformerEncoder(
-            encoder_layer=tx_encoder,
-            num_layers=1,
-            norm=nn.LayerNorm(768, eps=1e-6),
-            enable_nested_tensor=False
+            encoder_layer=tx_encoder, num_layers=1, norm=nn.LayerNorm(768, eps=1e-6), enable_nested_tensor=False
         )
 
         self.view_attention = nn.Linear(768, 1, bias=False)
@@ -562,7 +536,6 @@ class Phase7(nn.Module):
         nn.init.zeros_(self.view_attention.weight)
         nn.init.zeros_(self.classifier.bias)
 
-
     def encode(self, images):
         features = self.backbone(images)
         features = self.global_pooling(features)
@@ -570,7 +543,6 @@ class Phase7(nn.Module):
         features = features.flatten(start_dim=1)
 
         return features
-
 
     def forward(self, scan):
         batch_size, view_count, channels, height, width = scan.shape
@@ -623,7 +595,7 @@ class Phase8(nn.Module):
             activation="gelu",
             batch_first=True,
             norm_first=True,
-            layer_norm_eps=1e-6
+            layer_norm_eps=1e-6,
         )
 
         self.transformer = tx_encoder
@@ -637,7 +609,6 @@ class Phase8(nn.Module):
         nn.init.zeros_(self.view_attention.weight)
         nn.init.zeros_(self.classifier.bias)
 
-
     def encode(self, images):
         features = self.backbone(images)
         features = self.global_pooling(features)
@@ -645,7 +616,6 @@ class Phase8(nn.Module):
         features = features.flatten(start_dim=1)
 
         return features
-
 
     def forward(self, scan):
         batch_size, view_count, channels, height, width = scan.shape
@@ -704,7 +674,7 @@ class Phase9(nn.Module):
             activation="gelu",
             batch_first=True,
             norm_first=True,
-            layer_norm_eps=1e-6
+            layer_norm_eps=1e-6,
         )
 
         self.transformer = tx_encoder
@@ -721,7 +691,6 @@ class Phase9(nn.Module):
         nn.init.zeros_(self.view_attention.weight)
         nn.init.zeros_(self.classifier.bias)
 
-
     def encode(self, images):
         features = self.backbone(images)
         features = self.global_pooling(features)
@@ -729,7 +698,6 @@ class Phase9(nn.Module):
         features = features.flatten(start_dim=1)
 
         return features
-
 
     def forward(self, scan):
         batch_size, view_count, channels, height, width = scan.shape
@@ -790,14 +758,11 @@ class Phase10(nn.Module):
             activation="gelu",
             batch_first=True,
             norm_first=True,
-            layer_norm_eps=1e-6
+            layer_norm_eps=1e-6,
         )
 
         self.transformer = nn.TransformerEncoder(
-            encoder_layer=tx_encoder,
-            num_layers=1,
-            norm=nn.LayerNorm(768, eps=1e-6),
-            enable_nested_tensor=False
+            encoder_layer=tx_encoder, num_layers=1, norm=nn.LayerNorm(768, eps=1e-6), enable_nested_tensor=False
         )
 
         self.view_attention = nn.Linear(768, 1, bias=False)
@@ -807,7 +772,6 @@ class Phase10(nn.Module):
         nn.init.zeros_(self.view_attention.weight)
         nn.init.zeros_(self.classifier.bias)
 
-
     def encode(self, images):
         features = self.backbone(images)
         features = self.global_pooling(features)
@@ -815,7 +779,6 @@ class Phase10(nn.Module):
         features = features.flatten(start_dim=1)
 
         return features
-
 
     def forward(self, scan):
         batch_size, view_count, channels, height, width = scan.shape
@@ -868,7 +831,7 @@ class Phase11(nn.Module):
             activation="gelu",
             batch_first=True,
             norm_first=True,
-            layer_norm_eps=1e-6
+            layer_norm_eps=1e-6,
         )
 
         self.transformer = tx_encoder
@@ -882,7 +845,6 @@ class Phase11(nn.Module):
         nn.init.zeros_(self.view_attention.weight)
         nn.init.zeros_(self.classifier.bias)
 
-
     def encode(self, images):
         features = self.backbone(images)
         features = self.global_pooling(features)
@@ -890,7 +852,6 @@ class Phase11(nn.Module):
         features = features.flatten(start_dim=1)
 
         return features
-
 
     def forward(self, scan):
         batch_size, view_count, channels, height, width = scan.shape
@@ -946,14 +907,11 @@ class Phase12(nn.Module):
             activation="gelu",
             batch_first=True,
             norm_first=True,
-            layer_norm_eps=1e-6
+            layer_norm_eps=1e-6,
         )
 
         self.transformer = nn.TransformerEncoder(
-            encoder_layer=tx_encoder,
-            num_layers=2,
-            norm=nn.LayerNorm(768, eps=1e-6),
-            enable_nested_tensor=False
+            encoder_layer=tx_encoder, num_layers=2, norm=nn.LayerNorm(768, eps=1e-6), enable_nested_tensor=False
         )
 
         self.view_attention = nn.Linear(768, 1, bias=False)
@@ -963,7 +921,6 @@ class Phase12(nn.Module):
         nn.init.zeros_(self.view_attention.weight)
         nn.init.zeros_(self.classifier.bias)
 
-
     def encode(self, images):
         features = self.backbone(images)
         features = self.global_pooling(features)
@@ -971,7 +928,6 @@ class Phase12(nn.Module):
         features = features.flatten(start_dim=1)
 
         return features
-
 
     def forward(self, scan):
         batch_size, view_count, channels, height, width = scan.shape
@@ -1023,14 +979,11 @@ class Phase13(nn.Module):
             activation="gelu",
             batch_first=True,
             norm_first=True,
-            layer_norm_eps=1e-6
+            layer_norm_eps=1e-6,
         )
 
         self.transformer = nn.TransformerEncoder(
-            encoder_layer=tx_encoder,
-            num_layers=4,
-            norm=nn.LayerNorm(768, eps=1e-6),
-            enable_nested_tensor=False
+            encoder_layer=tx_encoder, num_layers=4, norm=nn.LayerNorm(768, eps=1e-6), enable_nested_tensor=False
         )
 
         self.view_attention = nn.Linear(768, 1, bias=False)
@@ -1040,7 +993,6 @@ class Phase13(nn.Module):
         nn.init.zeros_(self.view_attention.weight)
         nn.init.zeros_(self.classifier.bias)
 
-
     def encode(self, images):
         features = self.backbone(images)
         features = self.global_pooling(features)
@@ -1048,7 +1000,6 @@ class Phase13(nn.Module):
         features = features.flatten(start_dim=1)
 
         return features
-
 
     def forward(self, scan):
         batch_size, view_count, channels, height, width = scan.shape
@@ -1086,6 +1037,7 @@ class Unknown(nn.Module):
     동일한 Transformer layer를 2번 반복하고 게이트 연산을 적용한 사전 실험입니다.
     학습 가능성을 확인했지만, 통제된 조건에서 이루어진 비교가 아니기 때문에서 실험 결과에서 배제하였습니다.
     """
+
     def __init__(self, pretrained=True):
         super().__init__()
 
@@ -1107,7 +1059,7 @@ class Unknown(nn.Module):
             activation="gelu",
             batch_first=True,
             norm_first=True,
-            layer_norm_eps=1e-6
+            layer_norm_eps=1e-6,
         )
 
         self.transformer = tx_encoder
@@ -1124,7 +1076,6 @@ class Unknown(nn.Module):
         nn.init.zeros_(self.view_attention.weight)
         nn.init.zeros_(self.classifier.bias)
 
-
     def encode(self, images):
         features = self.backbone(images)
         features = self.global_pooling(features)
@@ -1132,7 +1083,6 @@ class Unknown(nn.Module):
         features = features.flatten(start_dim=1)
 
         return features
-
 
     def forward(self, scan):
         batch_size, view_count, channels, height, width = scan.shape

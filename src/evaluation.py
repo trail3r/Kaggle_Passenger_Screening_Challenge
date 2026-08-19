@@ -32,7 +32,6 @@ from src.model import Phase11
 from src.model import Phase12
 from src.model import Phase13
 
-
 DATA_DIRECTORY = Path("data")
 DATASET = Path("data/splits/dataset.csv")
 RESULT = Path("results")
@@ -95,7 +94,9 @@ def main(phase):
     checkpoint_path = Path(f"models/phase{phase}.pt")
 
     validation_dataset = APSDataset(dataset=DATASET, data_directory=DATA_DIRECTORY, type="validation", augment=False)
-    validation_loader = DataLoader(validation_dataset, batch_size=2, shuffle=False, num_workers=0, pin_memory=pin_memory)
+    validation_loader = DataLoader(
+        validation_dataset, batch_size=2, shuffle=False, num_workers=0, pin_memory=pin_memory
+    )
 
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True, mmap=True)
 
@@ -162,7 +163,9 @@ def main(phase):
     false_positive_rate = fp / (fp + tn)  # FPR = 오탐량 / 실제 위험 구역 음성량 (오탐률)
     false_negative_rate = fn / (fn + tp)  # FNR = 미탐량 / 실제 위험 구역 양성량 (미탐률)
 
-    roc_auc = roc_auc_score(labels, probabilities, average="macro")  # 모델이 양성과 음성을 얼마나 잘 구분해 순위를 매기는지 측정합니다.
+    roc_auc = roc_auc_score(
+        labels, probabilities, average="macro"
+    )  # 모델이 양성과 음성을 얼마나 잘 구분해 순위를 매기는지 측정합니다.
     pr_auc = average_precision_score(labels, probabilities, average="macro")
     # 양성 예측 정확성과 실제 양성 탐지 능력을 평가합니다.
     # 전체 데이터 비율 중 양성 데이터 비율이 10%로 불균형을 가진 데이터셋이기 떄문에 PR-AUC 점수가 보다 현실적인 성능 지표가 될 수 있다 생각합니다.
@@ -241,7 +244,7 @@ def main(phase):
             "recall": zone_recall,
             "f1_score": zone_f1,
             "false_positive_rate": zone_false_positive_rate,
-            "false_negative_rate": zone_false_negative_rate
+            "false_negative_rate": zone_false_negative_rate,
         }
 
         zone_results.append(zone_result)

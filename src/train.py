@@ -26,7 +26,6 @@ from src.model import Phase11
 from src.model import Phase12
 from src.model import Phase13
 
-
 # Notes: zero_grad() -> forward -> loss -> backward -> step
 
 KST = ZoneInfo("Asia/Seoul")
@@ -107,18 +106,9 @@ def adaptive_optimizer(model, phase):
             task_parameters.append(parameter)
 
     optimizer = torch.optim.AdamW(
-        [
-            {
-                "params": backbone_parameters,
-                "lr": 5e-5
-            },
-            {
-                "params": task_parameters,
-                "lr": 5e-4
-            }
-        ],
+        [{"params": backbone_parameters, "lr": 5e-5}, {"params": task_parameters, "lr": 5e-4}],
         betas=(0.9, 0.999),
-        weight_decay=0.05
+        weight_decay=0.05,
     )
 
     # !Temp! Test Code!
@@ -139,24 +129,13 @@ def adaptive_optimizer(model, phase):
 
         optimizer = torch.optim.AdamW(
             [
-                {
-                    "params": backbone_parameters,
-                    "lr": 5e-5
-                },
-                {
-                    "params": transformer_parameters,
-                    "lr": transformer_lr
-                },
-                {
-                    "params": task_parameters,
-                    "lr": 5e-4
-                }
+                {"params": backbone_parameters, "lr": 5e-5},
+                {"params": transformer_parameters, "lr": transformer_lr},
+                {"params": task_parameters, "lr": 5e-4},
             ],
             betas=(0.9, 0.999),
-            weight_decay=0.05
+            weight_decay=0.05,
         )
-
-
 
     print(f"Optimizer: {optimizer.__class__.__name__}")
 
@@ -236,12 +215,24 @@ def main(phase, mode="train"):
 
     if mode == "train":
         train_dataset = APSDataset(dataset=dataset, data_directory=data_directory, type="train", augment=True)
-        validation_dataset = APSDataset(dataset=dataset, data_directory=data_directory, type="validation", augment=False)
+        validation_dataset = APSDataset(
+            dataset=dataset, data_directory=data_directory, type="validation", augment=False
+        )
 
         # Match the 10th-place solution's loader configuration. persistent_workers
         # avoids recreating eight Windows worker processes after every epoch.
-        train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=8, pin_memory=pin_memory, persistent_workers=True, drop_last=True)
-        validation_loader = DataLoader(validation_dataset, batch_size=2, shuffle=False, num_workers=0, pin_memory=pin_memory)
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=2,
+            shuffle=True,
+            num_workers=8,
+            pin_memory=pin_memory,
+            persistent_workers=True,
+            drop_last=True,
+        )
+        validation_loader = DataLoader(
+            validation_dataset, batch_size=2, shuffle=False, num_workers=0, pin_memory=pin_memory
+        )
         # Validation은 결과 재현을 위해 shuffle을 False로 설정하였습니다.
 
         # Hyperparameters.
@@ -283,8 +274,12 @@ def main(phase, mode="train"):
         for epoch in range(start_epoch, epochs):
             epoch_start_time = perf_counter()
 
-            train_loss = train_one_epoch(model=model, data_loader=train_loader, criterion=criterion, optimizer=optimizer, device=device)
-            validation_loss = validate_one_epoch(model=model, data_loader=validation_loader, criterion=criterion, device=device)
+            train_loss = train_one_epoch(
+                model=model, data_loader=train_loader, criterion=criterion, optimizer=optimizer, device=device
+            )
+            validation_loss = validate_one_epoch(
+                model=model, data_loader=validation_loader, criterion=criterion, device=device
+            )
             learning_rates = [parameter_group["lr"] for parameter_group in optimizer.param_groups]
 
             epoch_end_time = perf_counter()
@@ -372,7 +367,9 @@ def main(phase, mode="train"):
                 print(f"Backbone Learning Rate: {learning_rates[0]:.2e}")
                 print(f"Task Learning Rate: {learning_rates[1]:.2e}")
 
-            sample_loss = train_one_epoch(model=model, data_loader=sample_loader, criterion=criterion, optimizer=optimizer, device=device)
+            sample_loss = train_one_epoch(
+                model=model, data_loader=sample_loader, criterion=criterion, optimizer=optimizer, device=device
+            )
 
             scheduler.step()
 

@@ -1,4 +1,4 @@
-""" APS Parser, Visualization Utilities and Manifest Builder.
+"""APS Parser, Visualization Utilities and Manifest Builder.
 
 이 모듈은 Kaggle Passenger Screening Algorithm Challenge에서 제공한 `*.aps` 파일을 읽고
 시각화하기 위한 함수, 정답 레이블 핸들링 함수, 학습용 manifest 생성을 위한 함수들을 포함합니다.
@@ -40,7 +40,6 @@ Matplotlib Animation: https://tech.jehyunlee.dev/2022/08/05/Python-DS-110-anim/
 
 """
 
-
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -55,7 +54,25 @@ from torchvision.transforms import InterpolationMode
 from torchvision.transforms import RandomAffine
 
 COLUMNS = [f"zone_{zone}" for zone in range(1, 18)]
-FLIPFLOP = {1: 3, 2: 4, 3: 1, 4: 2, 5: 5, 6: 7, 7: 6, 8: 10, 9: 9, 10: 8, 11: 12, 12: 11, 13: 14, 14: 13, 15: 16, 16: 15, 17: 17}
+FLIPFLOP = {
+    1: 3,
+    2: 4,
+    3: 1,
+    4: 2,
+    5: 5,
+    6: 7,
+    7: 6,
+    8: 10,
+    9: 9,
+    10: 8,
+    11: 12,
+    12: 11,
+    13: 14,
+    14: 13,
+    15: 16,
+    16: 15,
+    17: 17,
+}
 
 
 # 학습에 사용할 "*.aps" 데이터를 읽습니다.
@@ -282,13 +299,16 @@ def search_aps_files(aps_directory):
     if not aps_directory.is_dir():
         raise FileNotFoundError(f"'*.aps' 데이터가 저장된 폴더를 찾을 수 없습니다: {aps_directory}")
 
-    aps_files = sorted(path for path in aps_directory.iterdir() if path.is_file() and path.suffix.casefold() == ".aps" and not path.name.startswith("._"))
+    aps_files = sorted(
+        path
+        for path in aps_directory.iterdir()
+        if path.is_file() and path.suffix.casefold() == ".aps" and not path.name.startswith("._")
+    )
 
     if not aps_files:
         raise FileNotFoundError(f"'*.aps' 파일을 찾을 수 없습니다.")
 
     return aps_files
-
 
 
 # 학습에 사용할 데이터의 메타데이터(manifest)를 생성합니다.
@@ -303,7 +323,7 @@ def build_manifest(aps_directory, label_file):
     for aps_file in aps_files:
         data = {
             "scan_id": aps_file.stem,  # 파일명에서 스캔 ID를 추출합니다.
-            "aps_path": aps_file.relative_to(aps_directory.parent).as_posix()  # 학습용 파일의 파일 경로를 저장합니다.
+            "aps_path": aps_file.relative_to(aps_directory.parent).as_posix(),  # 학습용 파일의 파일 경로를 저장합니다.
         }
 
         records.append(data)
@@ -376,7 +396,9 @@ class APSDataset(Dataset):
         label_array = self.data[COLUMNS].to_numpy(dtype=np.float32)
         self.labels = torch.from_numpy(label_array)
 
-        self.random_affine = RandomAffine(degrees=15, translate=(0.01, 0.01), scale=(0.95, 1.05), interpolation=InterpolationMode.NEAREST)
+        self.random_affine = RandomAffine(
+            degrees=15, translate=(0.01, 0.01), scale=(0.95, 1.05), interpolation=InterpolationMode.NEAREST
+        )
         self.scans = []
 
         print(f"Loading {len(self.data)} scans into RAM...")
@@ -403,7 +425,7 @@ class APSDataset(Dataset):
                 scan, labels = flip(scan, labels)
 
             # Circular Roll
-            shift = torch.randint(0, scan.shape[0], (1, )).item()
+            shift = torch.randint(0, scan.shape[0], (1,)).item()
             scan = torch.roll(scan, shifts=shift, dims=0)
 
             scan = self.random_affine(scan)
