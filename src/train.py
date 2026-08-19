@@ -28,6 +28,7 @@ from src.model import Phase13
 from src.model import Phase14
 from src.model import Phase15
 from src.model import Phase16
+from src.model import Phase17
 
 # Notes: zero_grad() -> forward -> loss -> backward -> step
 
@@ -43,6 +44,7 @@ TRANSFORMER_LR = {
     14: 1e-4,
     15: 1e-4,
     16: 1e-4,
+    17: 1e-4,
 }  # 매우 직관적이군요!
 
 
@@ -236,18 +238,20 @@ def main(phase, mode="train"):
         model = Phase15(pretrained=True).to(device)
     elif phase == 16:
         model = Phase16(pretrained=True).to(device)
+    elif phase == 17:
+        model = Phase17(pretrained=True).to(device)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
     print(f"Phase{phase}: {model.__class__.__name__}")
+    print(f"Circular Roll Augmentation: {phase != 17}")
 
     if mode == "train":
-        train_dataset = APSDataset(dataset=dataset, data_directory=data_directory, type="train", augment=True)
+        train_dataset = APSDataset(
+            dataset=dataset, data_directory=data_directory, type="train", augment=True, circular_roll=phase != 17
+        )
         validation_dataset = APSDataset(
-            dataset=dataset,
-            data_directory=data_directory,
-            type="validation",
-            augment=False,
+            dataset=dataset, data_directory=data_directory, type="validation", augment=False
         )
 
         # Match the 10th-place solution's loader configuration. persistent_workers
@@ -458,4 +462,4 @@ def main(phase, mode="train"):
 
 
 if __name__ == "__main__":
-    main(phase=16)
+    main(phase=17)

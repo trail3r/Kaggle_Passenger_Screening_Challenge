@@ -1064,6 +1064,12 @@ class Phase16(Phase10):
     pass
 
 
+# Phase17
+# Phase16의 1-layer Transformer 구조와 학습 조건을 유지하고, 학습 데이터셋의 무작위 Circular Roll만 제거합니다.
+class Phase17(Phase16):
+    pass
+
+
 # Naming History
 # 이전 Phase4a는 현재 Phase4, 이전 Phase4b는 현재 Phase5로 이름을 변경하였습니다.
 # 이후 연구 과정에서 이루어지는 실험 조건마다 Phase가 하나씩 증가합니다.
@@ -1192,6 +1198,8 @@ def test(phase):
         model = Phase15(pretrained=False)
     elif phase == 16:
         model = Phase16(pretrained=False)
+    elif phase == 17:
+        model = Phase17(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -1229,7 +1237,7 @@ def test(phase):
     if hasattr(model, "view_attention"):
         print(f"View Attention Gradient: {model.view_attention.weight.grad.norm().item()}")
 
-    if phase in (4, 5, 7, 10, 16):
+    if phase in (4, 5, 7, 10, 16, 17):
         gradient = model.transformer.layers[0].self_attn.in_proj_weight.grad
         print(f"Transformer Gradient: {gradient.norm().item()}")
     elif phase in (6, 8, 9, 11):
@@ -1263,4 +1271,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase=16)
+    test(phase=17)

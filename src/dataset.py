@@ -381,7 +381,7 @@ def prepare_scan_data(scan, device):
 
 # For PyTorch
 class APSDataset(Dataset):
-    def __init__(self, dataset, data_directory, type, augment=False, sample_count=None):
+    def __init__(self, dataset, data_directory, type, augment=False, sample_count=None, circular_roll=True):
         data = pd.read_csv(dataset)
         self.data = data[data["type"] == type].reset_index(drop=True)
 
@@ -390,6 +390,7 @@ class APSDataset(Dataset):
 
         self.data_directory = Path(data_directory)
         self.augment = augment
+        self.circular_roll = circular_roll
 
         self.scan_ids = self.data["scan_id"].tolist()
 
@@ -424,9 +425,10 @@ class APSDataset(Dataset):
                 # 50% 확률로 Flip
                 scan, labels = flip(scan, labels)
 
-            # Circular Roll
             shift = torch.randint(0, scan.shape[0], (1,)).item()
-            scan = torch.roll(scan, shifts=shift, dims=0)
+
+            if self.circular_roll:
+                scan = torch.roll(scan, shifts=shift, dims=0)
 
             scan = self.random_affine(scan)
 
