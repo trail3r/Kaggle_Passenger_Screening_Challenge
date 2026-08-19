@@ -306,7 +306,7 @@ def search_aps_files(aps_directory):
     )
 
     if not aps_files:
-        raise FileNotFoundError(f"'*.aps' 파일을 찾을 수 없습니다.")
+        raise FileNotFoundError("'*.aps' 파일을 찾을 수 없습니다.")
 
     return aps_files
 
@@ -443,7 +443,7 @@ if __name__ == "__main__":
 
     header = read_header(sample_data)
 
-    print(f"샘플 데이터에 저장된 헤더 정보:")
+    print("샘플 데이터에 저장된 헤더 정보:")
     print(f"word_type: {header["word_type"][0]}")
     print(f"data_scale_factor: {header["data_scale_factor"][0]}")
     print(f"num_x_pts: {header["num_x_pts"][0]}")

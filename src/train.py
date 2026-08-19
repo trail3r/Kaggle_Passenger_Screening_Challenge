@@ -25,10 +25,21 @@ from src.model import Phase10
 from src.model import Phase11
 from src.model import Phase12
 from src.model import Phase13
+from src.model import Phase14
 
 # Notes: zero_grad() -> forward -> loss -> backward -> step
 
 KST = ZoneInfo("Asia/Seoul")
+TRANSFORMER_LR = {
+    7: 2e-4,
+    8: 2.5e-4,
+    9: 2.5e-4,
+    10: 2e-4,
+    11: 2e-4,
+    12: 2e-4,
+    13: 2e-4,
+    14: 1e-4,
+}  # 매우 직관적이군요!
 
 
 def train_one_epoch(model, data_loader, criterion, optimizer, device):
@@ -89,7 +100,7 @@ def validate_one_epoch(model, data_loader, criterion, device):
 
 def adaptive_optimizer(model, phase):
     """Phase별로 적절한 optimizer를 선택합니다."""
-    if phase in (0, 1):
+    if phase <= 1:
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4, nesterov=True)
 
         return optimizer
@@ -106,14 +117,17 @@ def adaptive_optimizer(model, phase):
             task_parameters.append(parameter)
 
     optimizer = torch.optim.AdamW(
-        [{"params": backbone_parameters, "lr": 5e-5}, {"params": task_parameters, "lr": 5e-4}],
+        [
+            {"params": backbone_parameters, "lr": 5e-5},
+            {"params": task_parameters, "lr": 5e-4},
+        ],
         betas=(0.9, 0.999),
         weight_decay=0.05,
     )
 
     # !Temp! Test Code!
-    if phase in (7, 8, 9, 10, 11, 12, 13):
-        transformer_lr = 2e-4 if phase in (7, 10, 11, 12, 13) else 2.5e-4
+    if phase in TRANSFORMER_LR:
+        transformer_lr = TRANSFORMER_LR[phase]
 
         backbone_parameters = []
         transformer_parameters = []
@@ -148,7 +162,7 @@ def adaptive_optimizer(model, phase):
 
 def adaptive_scheduler(optimizer, phase, epochs):
     """Phase별로 적절한 learning rate scheduler를 선택합니다."""
-    if phase in (0, 1):
+    if phase <= 1:
         scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-4)
 
         return scheduler
@@ -157,7 +171,11 @@ def adaptive_scheduler(optimizer, phase, epochs):
 
     warmup_scheduler = LinearLR(optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs)
     cosine_scheduler = CosineAnnealingLR(optimizer, T_max=epochs - warmup_epochs, eta_min=0.0)
-    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[warmup_epochs])
+    scheduler = SequentialLR(
+        optimizer,
+        schedulers=[warmup_scheduler, cosine_scheduler],
+        milestones=[warmup_epochs],
+    )
 
     return scheduler
 
@@ -208,6 +226,8 @@ def main(phase, mode="train"):
         model = Phase12(pretrained=True).to(device)
     elif phase == 13:
         model = Phase13(pretrained=True).to(device)
+    elif phase == 14:
+        model = Phase14(pretrained=True).to(device)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -216,7 +236,10 @@ def main(phase, mode="train"):
     if mode == "train":
         train_dataset = APSDataset(dataset=dataset, data_directory=data_directory, type="train", augment=True)
         validation_dataset = APSDataset(
-            dataset=dataset, data_directory=data_directory, type="validation", augment=False
+            dataset=dataset,
+            data_directory=data_directory,
+            type="validation",
+            augment=False,
         )
 
         # Match the 10th-place solution's loader configuration. persistent_workers
@@ -231,7 +254,11 @@ def main(phase, mode="train"):
             drop_last=True,
         )
         validation_loader = DataLoader(
-            validation_dataset, batch_size=2, shuffle=False, num_workers=0, pin_memory=pin_memory
+            validation_dataset,
+            batch_size=2,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=pin_memory,
         )
         # Validation은 결과 재현을 위해 shuffle을 False로 설정하였습니다.
 
@@ -275,10 +302,17 @@ def main(phase, mode="train"):
             epoch_start_time = perf_counter()
 
             train_loss = train_one_epoch(
-                model=model, data_loader=train_loader, criterion=criterion, optimizer=optimizer, device=device
+                model=model,
+                data_loader=train_loader,
+                criterion=criterion,
+                optimizer=optimizer,
+                device=device,
             )
             validation_loss = validate_one_epoch(
-                model=model, data_loader=validation_loader, criterion=criterion, device=device
+                model=model,
+                data_loader=validation_loader,
+                criterion=criterion,
+                device=device,
             )
             learning_rates = [parameter_group["lr"] for parameter_group in optimizer.param_groups]
 
@@ -294,9 +328,9 @@ def main(phase, mode="train"):
             print(f"Train Loss: {train_loss:.5f} | ", end="")
             print(f"Validation Loss: {validation_loss:.5f} | ", end="")
 
-            if phase in (0, 1):
+            if phase <= 1:
                 print(f"Learning Rate: {learning_rates[0]:.5f}")
-            elif phase in (7, 8, 9, 10, 11, 12, 13):
+            elif phase in TRANSFORMER_LR:
                 print(f"Backbone Learning Rate: {learning_rates[0]:.2e}")
                 print(f"Transformer Learning Rate: {learning_rates[1]:.2e}")
                 print(f"Task Learning Rate: {learning_rates[2]:.2e}")
@@ -345,7 +379,13 @@ def main(phase, mode="train"):
         print(f"Best Epoch: {best_epoch}")
         print(f"Best Validation Loss: {best_validation_loss}")
     elif mode == "smoke_test":
-        sample = APSDataset(dataset=dataset, data_directory=data_directory, type="train", augment=False, sample_count=5)
+        sample = APSDataset(
+            dataset=dataset,
+            data_directory=data_directory,
+            type="train",
+            augment=False,
+            sample_count=5,
+        )
 
         sample_loader = DataLoader(sample, batch_size=1, shuffle=False, num_workers=0)
 
@@ -357,9 +397,9 @@ def main(phase, mode="train"):
         for epoch in range(sample_epochs):
             learning_rates = [parameter_group["lr"] for parameter_group in optimizer.param_groups]
 
-            if phase in (0, 1):
+            if phase <= 1:
                 print(f"Learning Rate: {learning_rates[0]:.5f}")
-            elif phase in (7, 8, 9, 10, 11, 12, 13):
+            elif phase in TRANSFORMER_LR:
                 print(f"Backbone Learning Rate: {learning_rates[0]:.2e}")
                 print(f"Transformer Learning Rate: {learning_rates[1]:.2e}")
                 print(f"Task Learning Rate: {learning_rates[2]:.2e}")
@@ -368,7 +408,11 @@ def main(phase, mode="train"):
                 print(f"Task Learning Rate: {learning_rates[1]:.2e}")
 
             sample_loss = train_one_epoch(
-                model=model, data_loader=sample_loader, criterion=criterion, optimizer=optimizer, device=device
+                model=model,
+                data_loader=sample_loader,
+                criterion=criterion,
+                optimizer=optimizer,
+                device=device,
             )
 
             scheduler.step()
@@ -406,4 +450,4 @@ def main(phase, mode="train"):
 
 
 if __name__ == "__main__":
-    main(phase=13)
+    main(phase=14)

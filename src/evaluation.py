@@ -31,6 +31,7 @@ from src.model import Phase10
 from src.model import Phase11
 from src.model import Phase12
 from src.model import Phase13
+from src.model import Phase14
 
 DATA_DIRECTORY = Path("data")
 DATASET = Path("data/splits/dataset.csv")
@@ -86,6 +87,8 @@ def main(phase):
         model = Phase12(pretrained=False)
     elif phase == 13:
         model = Phase13(pretrained=False)
+    elif phase == 14:
+        model = Phase14(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -95,7 +98,11 @@ def main(phase):
 
     validation_dataset = APSDataset(dataset=DATASET, data_directory=DATA_DIRECTORY, type="validation", augment=False)
     validation_loader = DataLoader(
-        validation_dataset, batch_size=2, shuffle=False, num_workers=0, pin_memory=pin_memory
+        validation_dataset,
+        batch_size=2,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=pin_memory,
     )
 
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True, mmap=True)
@@ -185,17 +192,18 @@ def main(phase):
     print(f"F1-Score      : {f1:.5f}")
     # F1 Score? Does it mean Formula 1?
     # To Do: Prove that F1 Score is actually a Formula 1 metric.
-    # R01 |   Albert Park Grand Prix CIrcuit, Australia  | P1 George Russel (Mercedes)  | P2 Kimi Antonelli (Mercedes)        | P3 Charles Leclerc (Ferrari)
-    # R02 |     Shanghai International Circuit, China    | P1 Kimi Antonelli (Mercedes) | P2 George Russell (Mercedes)        | P3 Lewis Hamilton (Ferrari)
-    # R03 |             Suzuka Circuit, Japan            | P1 Kimi Antonelli (Mercedes) | P2 Oscar Piastri (McLaren)          | P3 Charles Leclerc (Ferrari)
-    # R04 | Miami International Autodrome, United States | P1 Kimi Antonelli (Mercedes) | P2 Lando Norris (McLaren)           | P3 Oscar Piastri (McLaren)
-    # R05 |       Circuit Gilles-Villeneuve, Canada      | P1 Kimi Antonelli (Mercedes) | P2 Lewis Hamilton (Ferrari)         | P3 Max Verstappen (Red Bull Racing)
-    # R06 |           Circuit de Monaco, Monaco          | P1 Kimi Antonelli (Mercedes) | P2 Lewis Hamilton (Ferrari)         | P3 Pierre Gasly (Alpine)
-    # R07 |     Circuit de Barcelona-Catalunya, Spain    | P1 Lewis Hamilton (Ferrari)  | P2 George Russell (Mercedes)        | P3 Lando Norris (McLaren)
-    # R08 |            Red Bull Ring, Austria            | P1 George Russell (Mercedes) | P2 Max Verstappen (Red Bull Racing) | P3 Kimi Antonelli (Mercedes)
-    # R09 |      Silverstone Circuit, United Kingdom     | P1 Charles Leclerc (Ferrari) | P2 George Russell (Mercedes)        | P3 Lewis Hamilton (Ferrari)
-    # R10 |     Circuit de Spa-Francorchamps, Belgium    | P1 Kimi Antonelli (Mercedes) | P2 Charles Leclerc (Ferrari)        | P3 Max Verstappen (Red Bull Racing)
-    # R11 |             Hungaroring, Hungary             | P1 Lando Norris (McLaren)    | P2 Max Verstappen (Red Bull Racing) | P3 Kimi Antonelli (Mercedes)
+
+    # R01 |   Albert Park Grand Prix CIrcuit, Australia  | P1 George Russel (Mercedes)  | P2 Kimi Antonelli (Mercedes)        | P3 Charles Leclerc (Ferrari)            # noqa: E501
+    # R02 |     Shanghai International Circuit, China    | P1 Kimi Antonelli (Mercedes) | P2 George Russell (Mercedes)        | P3 Lewis Hamilton (Ferrari)             # noqa: E501
+    # R03 |             Suzuka Circuit, Japan            | P1 Kimi Antonelli (Mercedes) | P2 Oscar Piastri (McLaren)          | P3 Charles Leclerc (Ferrari)            # noqa: E501
+    # R04 | Miami International Autodrome, United States | P1 Kimi Antonelli (Mercedes) | P2 Lando Norris (McLaren)           | P3 Oscar Piastri (McLaren)              # noqa: E501
+    # R05 |       Circuit Gilles-Villeneuve, Canada      | P1 Kimi Antonelli (Mercedes) | P2 Lewis Hamilton (Ferrari)         | P3 Max Verstappen (Red Bull Racing)     # noqa: E501
+    # R06 |           Circuit de Monaco, Monaco          | P1 Kimi Antonelli (Mercedes) | P2 Lewis Hamilton (Ferrari)         | P3 Pierre Gasly (Alpine)                # noqa: E501
+    # R07 |     Circuit de Barcelona-Catalunya, Spain    | P1 Lewis Hamilton (Ferrari)  | P2 George Russell (Mercedes)        | P3 Lando Norris (McLaren)               # noqa: E501
+    # R08 |            Red Bull Ring, Austria            | P1 George Russell (Mercedes) | P2 Max Verstappen (Red Bull Racing) | P3 Kimi Antonelli (Mercedes)            # noqa: E501
+    # R09 |      Silverstone Circuit, United Kingdom     | P1 Charles Leclerc (Ferrari) | P2 George Russell (Mercedes)        | P3 Lewis Hamilton (Ferrari)             # noqa: E501
+    # R10 |     Circuit de Spa-Francorchamps, Belgium    | P1 Kimi Antonelli (Mercedes) | P2 Charles Leclerc (Ferrari)        | P3 Max Verstappen (Red Bull Racing)     # noqa: E501
+    # R11 |             Hungaroring, Hungary             | P1 Lando Norris (McLaren)    | P2 Max Verstappen (Red Bull Racing) | P3 Kimi Antonelli (Mercedes)            # noqa: E501
     # R12 |        Circuit Zandvoort, Netherlands        | TBD |
     print(f"FPR           : {false_positive_rate:.5f}")
     print(f"FNR           : {false_negative_rate:.5f}")
@@ -276,4 +284,4 @@ def main(phase):
 
 
 if __name__ == "__main__":
-    main(phase=13)
+    main(phase=14)

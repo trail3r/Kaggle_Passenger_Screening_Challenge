@@ -301,7 +301,10 @@ class Phase4(nn.Module):
         )
 
         self.transformer = nn.TransformerEncoder(
-            encoder_layer=tx_encoder, num_layers=1, norm=nn.LayerNorm(768, eps=1e-6), enable_nested_tensor=False
+            encoder_layer=tx_encoder,
+            num_layers=1,
+            norm=nn.LayerNorm(768, eps=1e-6),
+            enable_nested_tensor=False,
         )
 
         self.view_attention = nn.Linear(768, 1, bias=False)
@@ -375,7 +378,10 @@ class Phase5(nn.Module):
         )
 
         self.transformer = nn.TransformerEncoder(
-            encoder_layer=tx_encoder, num_layers=1, norm=nn.LayerNorm(768, eps=1e-6), enable_nested_tensor=False
+            encoder_layer=tx_encoder,
+            num_layers=1,
+            norm=nn.LayerNorm(768, eps=1e-6),
+            enable_nested_tensor=False,
         )
 
         self.view_attention = nn.Linear(768, 1, bias=False)
@@ -526,7 +532,10 @@ class Phase7(nn.Module):
         )
 
         self.transformer = nn.TransformerEncoder(
-            encoder_layer=tx_encoder, num_layers=1, norm=nn.LayerNorm(768, eps=1e-6), enable_nested_tensor=False
+            encoder_layer=tx_encoder,
+            num_layers=1,
+            norm=nn.LayerNorm(768, eps=1e-6),
+            enable_nested_tensor=False,
         )
 
         self.view_attention = nn.Linear(768, 1, bias=False)
@@ -762,7 +771,10 @@ class Phase10(nn.Module):
         )
 
         self.transformer = nn.TransformerEncoder(
-            encoder_layer=tx_encoder, num_layers=1, norm=nn.LayerNorm(768, eps=1e-6), enable_nested_tensor=False
+            encoder_layer=tx_encoder,
+            num_layers=1,
+            norm=nn.LayerNorm(768, eps=1e-6),
+            enable_nested_tensor=False,
         )
 
         self.view_attention = nn.Linear(768, 1, bias=False)
@@ -911,7 +923,10 @@ class Phase12(nn.Module):
         )
 
         self.transformer = nn.TransformerEncoder(
-            encoder_layer=tx_encoder, num_layers=2, norm=nn.LayerNorm(768, eps=1e-6), enable_nested_tensor=False
+            encoder_layer=tx_encoder,
+            num_layers=2,
+            norm=nn.LayerNorm(768, eps=1e-6),
+            enable_nested_tensor=False,
         )
 
         self.view_attention = nn.Linear(768, 1, bias=False)
@@ -983,7 +998,10 @@ class Phase13(nn.Module):
         )
 
         self.transformer = nn.TransformerEncoder(
-            encoder_layer=tx_encoder, num_layers=4, norm=nn.LayerNorm(768, eps=1e-6), enable_nested_tensor=False
+            encoder_layer=tx_encoder,
+            num_layers=4,
+            norm=nn.LayerNorm(768, eps=1e-6),
+            enable_nested_tensor=False,
         )
 
         self.view_attention = nn.Linear(768, 1, bias=False)
@@ -1025,6 +1043,13 @@ class Phase13(nn.Module):
         result = self.classifier(scan_features)
 
         return result
+
+
+# Phase14
+# Phase13과 동일한 독립적인 Transformer 4-layer로 적층한 구조를 유지하고 Transformer의 Learning Rate만 1e-4로 낮춥니다.
+# Transformer를 4층으로 적층하며 높은 학습률이 최적화의 실패 원인인지 확인하기 위한 실험입니다.
+class Phase14(Phase13):
+    pass
 
 
 # Naming History
@@ -1149,6 +1174,8 @@ def test(phase):
         model = Phase12(pretrained=False)
     elif phase == 13:
         model = Phase13(pretrained=False)
+    elif phase == 14:
+        model = Phase14(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -1192,7 +1219,7 @@ def test(phase):
     elif phase in (6, 8, 9, 11):
         gradient = model.transformer.self_attn.in_proj_weight.grad
         print(f"Transformer Gradient: {gradient.norm().item()}")
-    elif phase in (12, 13):
+    elif phase in (12, 13, 14):
         for index, layer in enumerate(model.transformer.layers):
             gradient = layer.self_attn.in_proj_weight.grad
             print(f"Transformer Layer {index + 1} Gradient: {gradient.norm().item()}")
@@ -1220,4 +1247,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase=13)
+    test(phase=14)
