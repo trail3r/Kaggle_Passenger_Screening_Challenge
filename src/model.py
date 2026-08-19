@@ -1070,6 +1070,37 @@ class Phase17(Phase16):
     pass
 
 
+# Phase18
+# Phase16의 1-layer Transformer 구조와 학습 조건을 유지하고, view attention 슬롯 번호 정보를 제거합니다.
+class Phase18(Phase16):
+    def __init__(self, pretrained=True):
+        super().__init__(pretrained=pretrained)
+
+        del self.view_position
+
+    def forward(self, scan):
+        batch_size, view_count, channels, height, width = scan.shape
+
+        images = scan.reshape(batch_size * view_count, channels, height, width)
+
+        view_features = self.encode(images)
+        view_features = view_features.reshape(batch_size, view_count, 768)
+
+        outputs = self.transformer(view_features)
+
+        attention_score = self.view_attention(outputs)
+        attention_score = attention_score.squeeze(-1)
+        attention_weights = torch.softmax(attention_score, dim=1)
+
+        scan_features = outputs * attention_weights.unsqueeze(-1)
+        scan_features = scan_features.sum(dim=1)
+
+        scan_features = self.dropout(scan_features)
+        result = self.classifier(scan_features)
+
+        return result
+
+
 # Naming History
 # 이전 Phase4a는 현재 Phase4, 이전 Phase4b는 현재 Phase5로 이름을 변경하였습니다.
 # 이후 연구 과정에서 이루어지는 실험 조건마다 Phase가 하나씩 증가합니다.
@@ -1200,6 +1231,8 @@ def test(phase):
         model = Phase16(pretrained=False)
     elif phase == 17:
         model = Phase17(pretrained=False)
+    elif phase == 18:
+        model = Phase18(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -1237,7 +1270,7 @@ def test(phase):
     if hasattr(model, "view_attention"):
         print(f"View Attention Gradient: {model.view_attention.weight.grad.norm().item()}")
 
-    if phase in (4, 5, 7, 10, 16, 17):
+    if phase in (4, 5, 7, 10, 16, 17, 18):
         gradient = model.transformer.layers[0].self_attn.in_proj_weight.grad
         print(f"Transformer Gradient: {gradient.norm().item()}")
     elif phase in (6, 8, 9, 11):
@@ -1271,4 +1304,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase=17)
+    test(phase=18)
