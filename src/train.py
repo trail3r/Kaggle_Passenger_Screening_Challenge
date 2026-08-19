@@ -22,6 +22,9 @@ from src.model import Phase7
 from src.model import Phase8
 from src.model import Phase9
 from src.model import Phase10
+from src.model import Phase11
+from src.model import Phase12
+from src.model import Phase13
 
 
 # Notes: zero_grad() -> forward -> loss -> backward -> step
@@ -119,8 +122,8 @@ def adaptive_optimizer(model, phase):
     )
 
     # !Temp! Test Code!
-    if phase in (7, 8, 9, 10):
-        transformer_lr = 2e-4 if phase in (7, 10) else 2.5e-4
+    if phase in (7, 8, 9, 10, 11, 12, 13):
+        transformer_lr = 2e-4 if phase in (7, 10, 11, 12, 13) else 2.5e-4
 
         backbone_parameters = []
         transformer_parameters = []
@@ -205,7 +208,7 @@ def main(phase, mode="train"):
     elif phase == 2:
         model = Phase1(pretrained=True).to(device)
     elif phase == 3:
-        model = Phase3(pretrained=True).to(device)  # ConvNeXt 특징을 LSTM으로 순차 처리하고, 하나의 평가 함수를 모든 View에 공유합니다.
+        model = Phase3(pretrained=True).to(device)
     elif phase == 4:
         model = Phase4(pretrained=True).to(device)
     elif phase == 5:
@@ -220,6 +223,12 @@ def main(phase, mode="train"):
         model = Phase9(pretrained=True).to(device)
     elif phase == 10:
         model = Phase10(pretrained=True).to(device)
+    elif phase == 11:
+        model = Phase11(pretrained=True).to(device)
+    elif phase == 12:
+        model = Phase12(pretrained=True).to(device)
+    elif phase == 13:
+        model = Phase13(pretrained=True).to(device)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -292,8 +301,10 @@ def main(phase, mode="train"):
 
             if phase in (0, 1):
                 print(f"Learning Rate: {learning_rates[0]:.5f}")
-            elif phase in (7, 8, 9, 10):
-                print(f"Backbone Learning Rate: {learning_rates[0]:.2e} | Transformer Learning Rate: {learning_rates[1]:.2e} | Task Learning Rate: {learning_rates[2]:.2e}")
+            elif phase in (7, 8, 9, 10, 11, 12, 13):
+                print(f"Backbone Learning Rate: {learning_rates[0]:.2e}")
+                print(f"Transformer Learning Rate: {learning_rates[1]:.2e}")
+                print(f"Task Learning Rate: {learning_rates[2]:.2e}")
             else:
                 print(f"Backbone Learning Rate: {learning_rates[0]:.2e} | Task Learning Rate: {learning_rates[1]:.2e}")
 
@@ -353,8 +364,10 @@ def main(phase, mode="train"):
 
             if phase in (0, 1):
                 print(f"Learning Rate: {learning_rates[0]:.5f}")
-            elif phase in (7, 8, 9, 10):
-                print(f"Backbone Learning Rate: {learning_rates[0]:.2e} | Transformer Learning Rate: {learning_rates[1]:.2e} | Task Learning Rate: {learning_rates[2]:.2e}")
+            elif phase in (7, 8, 9, 10, 11, 12, 13):
+                print(f"Backbone Learning Rate: {learning_rates[0]:.2e}")
+                print(f"Transformer Learning Rate: {learning_rates[1]:.2e}")
+                print(f"Task Learning Rate: {learning_rates[2]:.2e}")
             else:
                 print(f"Backbone Learning Rate: {learning_rates[0]:.2e}")
                 print(f"Task Learning Rate: {learning_rates[1]:.2e}")
@@ -396,4 +409,4 @@ def main(phase, mode="train"):
 
 
 if __name__ == "__main__":
-    main(phase=10)
+    main(phase=13)
