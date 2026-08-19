@@ -26,6 +26,8 @@ from src.model import Phase11
 from src.model import Phase12
 from src.model import Phase13
 from src.model import Phase14
+from src.model import Phase15
+from src.model import Phase16
 
 # Notes: zero_grad() -> forward -> loss -> backward -> step
 
@@ -39,6 +41,8 @@ TRANSFORMER_LR = {
     12: 2e-4,
     13: 2e-4,
     14: 1e-4,
+    15: 1e-4,
+    16: 1e-4,
 }  # 매우 직관적이군요!
 
 
@@ -228,6 +232,10 @@ def main(phase, mode="train"):
         model = Phase13(pretrained=True).to(device)
     elif phase == 14:
         model = Phase14(pretrained=True).to(device)
+    elif phase == 15:
+        model = Phase15(pretrained=True).to(device)
+    elif phase == 16:
+        model = Phase16(pretrained=True).to(device)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -450,4 +458,4 @@ def main(phase, mode="train"):
 
 
 if __name__ == "__main__":
-    main(phase=14)
+    main(phase=16)

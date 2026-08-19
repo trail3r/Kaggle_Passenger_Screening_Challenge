@@ -1052,6 +1052,18 @@ class Phase14(Phase13):
     pass
 
 
+# Phase15
+# Phase12의 독립적인 2-layer Transformer 구조를 유지하고, 학습률을 1e-4로 낮춥니다.
+class Phase15(Phase12):
+    pass
+
+
+# Phase16
+# Phase10의 1-layer Transformer 구조를 유지하고 학습률을 1e-4로 낮춥니다.
+class Phase16(Phase10):
+    pass
+
+
 # Naming History
 # 이전 Phase4a는 현재 Phase4, 이전 Phase4b는 현재 Phase5로 이름을 변경하였습니다.
 # 이후 연구 과정에서 이루어지는 실험 조건마다 Phase가 하나씩 증가합니다.
@@ -1176,6 +1188,10 @@ def test(phase):
         model = Phase13(pretrained=False)
     elif phase == 14:
         model = Phase14(pretrained=False)
+    elif phase == 15:
+        model = Phase15(pretrained=False)
+    elif phase == 16:
+        model = Phase16(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -1213,13 +1229,13 @@ def test(phase):
     if hasattr(model, "view_attention"):
         print(f"View Attention Gradient: {model.view_attention.weight.grad.norm().item()}")
 
-    if phase in (4, 5, 7, 10):
+    if phase in (4, 5, 7, 10, 16):
         gradient = model.transformer.layers[0].self_attn.in_proj_weight.grad
         print(f"Transformer Gradient: {gradient.norm().item()}")
     elif phase in (6, 8, 9, 11):
         gradient = model.transformer.self_attn.in_proj_weight.grad
         print(f"Transformer Gradient: {gradient.norm().item()}")
-    elif phase in (12, 13, 14):
+    elif phase in (12, 13, 14, 15):
         for index, layer in enumerate(model.transformer.layers):
             gradient = layer.self_attn.in_proj_weight.grad
             print(f"Transformer Layer {index + 1} Gradient: {gradient.norm().item()}")
@@ -1247,4 +1263,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase=14)
+    test(phase=16)
