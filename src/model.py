@@ -1130,6 +1130,45 @@ class Phase19(Phase17):
         return result
 
 
+# Phase20
+# Phase17은 밀리미터파 스캔 이미지 하나당 하나의 View Attention을 17개 신체 구역이 공유하는 구조입니다.
+# Phase19는 밀리미터파 스캔 이미지 하나의 모든 View가 가진 View Attention을 1/16로 평균내어 균등하게 결합합니다.
+# Phase20은 17개의 신체 구역이 각자 별도의 View Attention을 가집니다.
+class Phase20(Phase17):
+    def __init__(self, pretrained=True):
+        super().__init__(pretrained=pretrained)
+
+        self.zone_view_attention = nn.Parameter(self.view_attention.weight.detach().repeat(17, 1))
+        nn.init.zeros_(self.zone_view_attention)
+
+        del self.view_attention
+
+    def forward(self, scan):
+        batch_size, view_count, channels, height, width = scan.shape
+
+        images = scan.reshape(batch_size * view_count, channels, height, width)
+
+        view_features = self.encode(images)
+        view_features = view_features.reshape(batch_size, view_count, 768)
+
+        view_position = self.view_position[:, :view_count]
+
+        outputs = view_features + view_position
+        outputs = self.transformer(outputs)  # [B, V, 768] => [2, 16, 768]
+
+        attention_score = torch.matmul(outputs, self.zone_view_attention.t())  # [B, 16, 17]
+        attention_weights = torch.softmax(attention_score, dim=1)  # [B, 16, 17]
+
+        zone_features = torch.bmm(attention_weights.transpose(1, 2), outputs)
+        zone_features = self.dropout(zone_features)  # [B, 17, 768]
+
+        # 신체 구역별 Zone Feature가 필요하기 때문에 Classifier의 행별로 곱셈 수행
+        result = (zone_features * self.classifier.weight.unsqueeze(0)).sum(dim=-1)
+        result = result + self.classifier.bias
+
+        return result  # [B, 17]
+
+
 # Naming History
 # 이전 Phase4a는 현재 Phase4, 이전 Phase4b는 현재 Phase5로 이름을 변경하였습니다.
 # 이후 연구 과정에서 이루어지는 실험 조건마다 Phase가 하나씩 증가합니다.
@@ -1264,6 +1303,8 @@ def test(phase):
         model = Phase18(pretrained=False)
     elif phase == 19:
         model = Phase19(pretrained=False)
+    elif phase == 20:
+        model = Phase20(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -1301,7 +1342,7 @@ def test(phase):
     if hasattr(model, "view_attention"):
         print(f"View Attention Gradient: {model.view_attention.weight.grad.norm().item()}")
 
-    if phase in (4, 5, 7, 10, 16, 17, 18, 19):
+    if phase in (4, 5, 7, 10, 16, 17, 18, 19, 20):
         gradient = model.transformer.layers[0].self_attn.in_proj_weight.grad
         print(f"Transformer Gradient: {gradient.norm().item()}")
     elif phase in (6, 8, 9, 11):
@@ -1317,6 +1358,9 @@ def test(phase):
 
     if hasattr(model, "gate"):
         print(f"Gate Gradient: {model.gate.weight.grad.norm().item()}")
+
+    if hasattr(model, "zone_view_attention"):
+        print(f"Zone View Attention Gradient: {model.zone_view_attention.grad.norm().item()}")
 
     print(f"Classifier Gradient: {model.classifier.weight.grad.norm().item()}")
 
@@ -1335,4 +1379,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase=19)
+    test(phase=20)

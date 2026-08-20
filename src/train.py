@@ -31,6 +31,7 @@ from src.model import Phase16
 from src.model import Phase17
 from src.model import Phase18
 from src.model import Phase19
+from src.model import Phase20
 
 # Notes: zero_grad -> forward -> loss -> backward -> step
 
@@ -49,8 +50,9 @@ TRANSFORMER_LR = {
     17: 1e-4,
     18: 1e-4,
     19: 1e-4,
+    20: 1e-4,
 }  # 매우 직관적이군요!
-DISABLE_CIRCULAR_ROLL = {17, 19}
+DISABLE_CIRCULAR_ROLL = {17, 19, 20}
 
 
 def train_one_epoch(model, data_loader, criterion, optimizer, device):
@@ -251,6 +253,8 @@ def main(phase, mode="train"):
         model = Phase18(pretrained=True).to(device)
     elif phase == 19:
         model = Phase19(pretrained=True).to(device)
+    elif phase == 20:
+        model = Phase20(pretrained=True).to(device)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -477,4 +481,4 @@ def main(phase, mode="train"):
 
 
 if __name__ == "__main__":
-    main(phase=19)
+    main(phase=20)
