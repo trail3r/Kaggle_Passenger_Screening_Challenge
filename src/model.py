@@ -1169,6 +1169,63 @@ class Phase20(Phase17):
         return result  # [B, 17]
 
 
+# 마침내! 드디어 우리의 "진짜" 연구를 시작할 수 있습니다!
+# 제1 연구 질문: 신체 구역 별로 학습 가능한 Query가 있다면 해당 구역의 위험물을 보다 잘 탐지할 수 있을 것인가?
+# 제1 연구 질문 가설: 신체 구역 별로 학습 가능한 Query가 있다면 특정 신체 구역의 위험물을 놓치는 빈도가 줄어들 것이다.
+
+
+# Phase21: Research Question 1
+# Phase20의 Zone별 View Attention을 Multi Head Cross Attention으로 확장합니다.
+# Zone Query가 16개 View에서 특정 신체 구역에 필요한 증거를 독립적으로 학습합니다.
+class Phase21(Phase17):
+    def __init__(self, pretrained=True):
+        super().__init__(pretrained=pretrained)
+
+        del self.view_attention
+
+        # Zone Query!
+        self.zone_query = nn.Parameter(torch.zeros(1, 17, 768))
+        with torch.random.fork_rng(devices=[]):
+            self.zone_cross_attention = nn.MultiheadAttention(
+                embed_dim=768, num_heads=8, dropout=0, bias=False, batch_first=True
+            )
+
+        # 초기에는 모든 View의 평균으로 초기화합니다.
+        with torch.no_grad():
+            query, key, value = self.zone_cross_attention.in_proj_weight.chunk(3, dim=0)
+
+            nn.init.eye_(query)
+            nn.init.eye_(key)
+            nn.init.eye_(value)
+
+        nn.init.eye_(self.zone_cross_attention.out_proj.weight)
+
+    def forward(self, scan):
+        batch_size, view_count, channels, height, width = scan.shape
+
+        images = scan.reshape(batch_size * view_count, channels, height, width)
+
+        view_features = self.encode(images)
+        view_features = view_features.reshape(batch_size, view_count, 768)
+
+        view_position = self.view_position[:, :view_count]
+
+        outputs = view_features + view_position
+        outputs = self.transformer(outputs)
+
+        zone_query = self.zone_query.expand(batch_size, -1, -1)
+
+        zone_features, _ = self.zone_cross_attention(query=zone_query, key=outputs, value=outputs, need_weights=False)
+        zone_features = self.dropout(zone_features)
+
+        # 각 신체 구역의 Zone Feature에 대응하는 Classifier 행을 적용합니다.
+        classifier_weight = self.classifier.weight.unsqueeze(0)
+        result = (zone_features * classifier_weight).sum(dim=-1)
+        result = result + self.classifier.bias
+
+        return result
+
+
 # Naming History
 # 이전 Phase4a는 현재 Phase4, 이전 Phase4b는 현재 Phase5로 이름을 변경하였습니다.
 # 이후 연구 과정에서 이루어지는 실험 조건마다 Phase가 하나씩 증가합니다.
@@ -1305,6 +1362,8 @@ def test(phase):
         model = Phase19(pretrained=False)
     elif phase == 20:
         model = Phase20(pretrained=False)
+    elif phase == 21:
+        model = Phase21(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -1342,7 +1401,7 @@ def test(phase):
     if hasattr(model, "view_attention"):
         print(f"View Attention Gradient: {model.view_attention.weight.grad.norm().item()}")
 
-    if phase in (4, 5, 7, 10, 16, 17, 18, 19, 20):
+    if phase in (4, 5, 7, 10, 16, 17, 18, 19, 20, 21):
         gradient = model.transformer.layers[0].self_attn.in_proj_weight.grad
         print(f"Transformer Gradient: {gradient.norm().item()}")
     elif phase in (6, 8, 9, 11):
@@ -1362,6 +1421,13 @@ def test(phase):
     if hasattr(model, "zone_view_attention"):
         print(f"Zone View Attention Gradient: {model.zone_view_attention.grad.norm().item()}")
 
+    if hasattr(model, "zone_cross_attention"):
+        gradient = model.zone_cross_attention.in_proj_weight.grad
+        print(f"Zone Cross Attention Gradient: {gradient.norm().item()}")
+
+    if hasattr(model, "zone_query"):
+        print(f"Zone Query Gradient: {model.zone_query.grad.norm().item()}")
+
     print(f"Classifier Gradient: {model.classifier.weight.grad.norm().item()}")
 
     model.eval()
@@ -1379,4 +1445,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase=20)
+    test(phase=21)

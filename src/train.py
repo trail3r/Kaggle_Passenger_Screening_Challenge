@@ -32,6 +32,7 @@ from src.model import Phase17
 from src.model import Phase18
 from src.model import Phase19
 from src.model import Phase20
+from src.model import Phase21
 
 # Notes: zero_grad -> forward -> loss -> backward -> step
 
@@ -51,8 +52,9 @@ TRANSFORMER_LR = {
     18: 1e-4,
     19: 1e-4,
     20: 1e-4,
+    21: 1e-4,
 }  # 매우 직관적이군요!
-DISABLE_CIRCULAR_ROLL = {17, 19, 20}
+DISABLE_CIRCULAR_ROLL = {17, 19, 20, 21}
 
 
 def train_one_epoch(model, data_loader, criterion, optimizer, device):
@@ -149,7 +151,7 @@ def adaptive_optimizer(model, phase):
         for name, parameter in model.named_parameters():
             if name.startswith("backbone"):
                 backbone_parameters.append(parameter)
-            elif name.startswith("transformer"):
+            elif name.startswith(("transformer", "zone_cross_attention")):
                 transformer_parameters.append(parameter)
             else:
                 task_parameters.append(parameter)
@@ -255,6 +257,8 @@ def main(phase, mode="train"):
         model = Phase19(pretrained=True).to(device)
     elif phase == 20:
         model = Phase20(pretrained=True).to(device)
+    elif phase == 21:
+        model = Phase21(pretrained=True).to(device)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -481,4 +485,4 @@ def main(phase, mode="train"):
 
 
 if __name__ == "__main__":
-    main(phase=20)
+    main(phase=21)
