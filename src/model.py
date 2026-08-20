@@ -1101,6 +1101,35 @@ class Phase18(Phase16):
         return result
 
 
+# Phase19
+# Phase17의 구조와 학습 조건을 유지하고, View Attention을 동일한 가중치로 평균내 결합합니다.
+class Phase19(Phase17):
+    def __init__(self, pretrained=True):
+        super().__init__(pretrained=pretrained)
+
+        del self.view_attention
+
+    def forward(self, scan):
+        batch_size, view_count, channels, height, width = scan.shape
+
+        images = scan.reshape(batch_size * view_count, channels, height, width)
+
+        view_features = self.encode(images)
+        view_features = view_features.reshape(batch_size, view_count, 768)
+
+        view_position = self.view_position[:, :view_count]
+
+        outputs = view_features + view_position
+        outputs = self.transformer(outputs)
+
+        scan_features = outputs.mean(dim=1)
+
+        scan_features = self.dropout(scan_features)
+        result = self.classifier(scan_features)
+
+        return result
+
+
 # Naming History
 # 이전 Phase4a는 현재 Phase4, 이전 Phase4b는 현재 Phase5로 이름을 변경하였습니다.
 # 이후 연구 과정에서 이루어지는 실험 조건마다 Phase가 하나씩 증가합니다.
@@ -1233,6 +1262,8 @@ def test(phase):
         model = Phase17(pretrained=False)
     elif phase == 18:
         model = Phase18(pretrained=False)
+    elif phase == 19:
+        model = Phase19(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -1270,7 +1301,7 @@ def test(phase):
     if hasattr(model, "view_attention"):
         print(f"View Attention Gradient: {model.view_attention.weight.grad.norm().item()}")
 
-    if phase in (4, 5, 7, 10, 16, 17, 18):
+    if phase in (4, 5, 7, 10, 16, 17, 18, 19):
         gradient = model.transformer.layers[0].self_attn.in_proj_weight.grad
         print(f"Transformer Gradient: {gradient.norm().item()}")
     elif phase in (6, 8, 9, 11):
@@ -1304,4 +1335,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase=18)
+    test(phase=19)

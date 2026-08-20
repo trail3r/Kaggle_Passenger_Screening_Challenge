@@ -30,8 +30,9 @@ from src.model import Phase15
 from src.model import Phase16
 from src.model import Phase17
 from src.model import Phase18
+from src.model import Phase19
 
-# Notes: zero_grad() -> forward -> loss -> backward -> step
+# Notes: zero_grad -> forward -> loss -> backward -> step
 
 KST = ZoneInfo("Asia/Seoul")
 TRANSFORMER_LR = {
@@ -47,7 +48,9 @@ TRANSFORMER_LR = {
     16: 1e-4,
     17: 1e-4,
     18: 1e-4,
+    19: 1e-4,
 }  # 매우 직관적이군요!
+DISABLE_CIRCULAR_ROLL = {17, 19}
 
 
 def train_one_epoch(model, data_loader, criterion, optimizer, device):
@@ -206,6 +209,8 @@ def main(phase, mode="train"):
     dataset = Path("data/splits/dataset.csv")
     data_directory = Path("data")
 
+    enable_circular_roll = phase not in DISABLE_CIRCULAR_ROLL
+
     if phase == 0:
         model = Phase0(pretrained=True).to(device)
     elif phase == 1:
@@ -244,15 +249,21 @@ def main(phase, mode="train"):
         model = Phase17(pretrained=True).to(device)
     elif phase == 18:
         model = Phase18(pretrained=True).to(device)
+    elif phase == 19:
+        model = Phase19(pretrained=True).to(device)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
     print(f"Phase{phase}: {model.__class__.__name__}")
-    print(f"Circular Roll Augmentation: {phase != 17}")
+    print(f"Circular Roll Augmentation: {enable_circular_roll}")
 
     if mode == "train":
         train_dataset = APSDataset(
-            dataset=dataset, data_directory=data_directory, type="train", augment=True, circular_roll=phase != 17
+            dataset=dataset,
+            data_directory=data_directory,
+            type="train",
+            augment=True,
+            circular_roll=enable_circular_roll,
         )
         validation_dataset = APSDataset(
             dataset=dataset, data_directory=data_directory, type="validation", augment=False
@@ -466,4 +477,4 @@ def main(phase, mode="train"):
 
 
 if __name__ == "__main__":
-    main(phase=18)
+    main(phase=19)
