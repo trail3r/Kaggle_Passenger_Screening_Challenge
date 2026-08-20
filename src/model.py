@@ -1226,6 +1226,127 @@ class Phase21(Phase17):
         return result
 
 
+# Phase22
+# Transformer와 LSTM의 성능 비교를 위한 실험입니다. Phase3의 View Attention을 평균내 결합합니다.
+class Phase22(Phase3):
+    def __init__(self, pretrained=True):
+        super().__init__(pretrained=pretrained)
+
+        del self.view_attention
+
+    def forward(self, scan):
+        batch_size, view_count, channels, height, width = scan.shape
+
+        images = scan.reshape(batch_size * view_count, channels, height, width)
+
+        view_features = self.encode(images)
+        view_features = view_features.reshape(batch_size, view_count, 768)
+
+        outputs, _ = self.lstm(view_features)
+
+        scan_features = outputs.mean(dim=1)
+
+        scan_features = self.dropout(scan_features)
+        result = self.classifier(scan_features)
+
+        return result
+
+
+# Phase23
+# Phase20의 비교 대조군입니다. LSTM에 신체 구역별 View Attention을 가지는 모델을 실험합니다.
+class Phase23(Phase3):
+    def __init__(self, pretrained=True):
+        super().__init__(pretrained=pretrained)
+
+        self.zone_view_attention = nn.Parameter(self.view_attention.weight.detach().repeat(17, 1))
+        nn.init.zeros_(self.zone_view_attention)
+
+        del self.view_attention
+
+    def forward(self, scan):
+        batch_size, view_count, channels, height, width = scan.shape
+
+        images = scan.reshape(batch_size * view_count, channels, height, width)
+
+        view_features = self.encode(images)
+        view_features = view_features.reshape(batch_size, view_count, 768)
+
+        outputs, _ = self.lstm(view_features)
+
+        attention_score = torch.matmul(
+            outputs,
+            self.zone_view_attention.t(),
+        )
+        attention_weights = torch.softmax(attention_score, dim=1)
+
+        zone_features = torch.bmm(
+            attention_weights.transpose(1, 2),
+            outputs,
+        )
+
+        zone_features = self.dropout(zone_features)
+
+        classifier_weight = self.classifier.weight.unsqueeze(0)
+        result = (zone_features * classifier_weight).sum(dim=-1)
+        result = result + self.classifier.bias
+
+        return result
+
+
+# Phase24
+# Phase21의 비교 대조군입니다. LSTM 출력에 Multi-head Zone Query를 적용합니다.
+class Phase24(Phase3):
+    def __init__(self, pretrained=True):
+        super().__init__(pretrained=pretrained)
+
+        del self.view_attention
+
+        self.zone_query = nn.Parameter(torch.zeros(1, 17, 768))
+
+        with torch.random.fork_rng(devices=[]):
+            self.zone_cross_attention = nn.MultiheadAttention(
+                embed_dim=768,
+                num_heads=8,
+                dropout=0.0,
+                bias=False,
+                batch_first=True,
+            )
+
+        with torch.no_grad():
+            query, key, value = self.zone_cross_attention.in_proj_weight.chunk(3, dim=0)
+
+            nn.init.eye_(query)
+            nn.init.eye_(key)
+            nn.init.eye_(value)
+            nn.init.eye_(self.zone_cross_attention.out_proj.weight)
+
+    def forward(self, scan):
+        batch_size, view_count, channels, height, width = scan.shape
+
+        images = scan.reshape(batch_size * view_count, channels, height, width)
+
+        view_features = self.encode(images)
+        view_features = view_features.reshape(batch_size, view_count, 768)
+
+        outputs, _ = self.lstm(view_features)
+
+        zone_query = self.zone_query.expand(batch_size, -1, -1)
+
+        zone_features, _ = self.zone_cross_attention(
+            query=zone_query,
+            key=outputs,
+            value=outputs,
+            need_weights=False,
+        )
+        zone_features = self.dropout(zone_features)
+
+        classifier_weight = self.classifier.weight.unsqueeze(0)
+        result = (zone_features * classifier_weight).sum(dim=-1)
+        result = result + self.classifier.bias
+
+        return result
+
+
 # Naming History
 # 이전 Phase4a는 현재 Phase4, 이전 Phase4b는 현재 Phase5로 이름을 변경하였습니다.
 # 이후 연구 과정에서 이루어지는 실험 조건마다 Phase가 하나씩 증가합니다.
@@ -1364,6 +1485,12 @@ def test(phase):
         model = Phase20(pretrained=False)
     elif phase == 21:
         model = Phase21(pretrained=False)
+    elif phase == 22:
+        model = Phase22(pretrained=False)
+    elif phase == 23:
+        model = Phase23(pretrained=False)
+    elif phase == 24:
+        model = Phase24(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -1445,4 +1572,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase=21)
+    test(phase=24)
