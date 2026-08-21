@@ -1347,6 +1347,54 @@ class Phase24(Phase3):
         return result
 
 
+# Phase25: Research Question 2
+# 모델에게 명시적인 각도 정보를 제공하였을 때, 각 뷰와 각도 정보를 결합하여 더 강한 추론을 할 수 있는지 확인합니다.
+class Phase25(Phase21):
+    def __init__(self, pretrained=True):
+        super().__init__(pretrained=pretrained)
+
+        angle_point = torch.arange(16, dtype=torch.float32)
+        angle = 2 * torch.pi * angle_point / 16  # 2πθ/16
+        angle_features = torch.stack([torch.cos(angle), torch.sin(angle)], dim=-1)
+        angle_features = angle_features.unsqueeze(0)
+
+        # Checkpoint에 저장
+        self.register_buffer("angle_features", angle_features)
+
+        with torch.random.fork_rng(devices=[]):
+            self.angle_projection = nn.Linear(in_features=2, out_features=768, bias=False)
+
+        nn.init.zeros_(self.angle_projection.weight)
+
+    def forward(self, scan):
+        batch_size, view_count, channels, height, width = scan.shape
+
+        images = scan.reshape(batch_size * view_count, channels, height, width)
+
+        view_features = self.encode(images)
+        view_features = view_features.reshape(batch_size, view_count, 768)
+
+        view_position = self.view_position[:, :view_count]
+        angle_features = self.angle_features[:, :view_count]
+        angle_features = angle_features.to(dtype=view_features.dtype)
+        angle_embedding = self.angle_projection(angle_features)
+
+        outputs = view_features + view_position + angle_embedding
+        outputs = self.transformer(outputs)
+
+        zone_query = self.zone_query.expand(batch_size, -1, -1)
+
+        zone_features, _ = self.zone_cross_attention(query=zone_query, key=outputs, value=outputs, need_weights=False)
+        zone_features = self.dropout(zone_features)
+
+        classifier_weight = self.classifier.weight.unsqueeze(0)
+
+        result = (zone_features * classifier_weight).sum(dim=-1)
+        result = result + self.classifier.bias
+
+        return result
+
+
 # Naming History
 # 이전 Phase4a는 현재 Phase4, 이전 Phase4b는 현재 Phase5로 이름을 변경하였습니다.
 # 이후 연구 과정에서 이루어지는 실험 조건마다 Phase가 하나씩 증가합니다.
@@ -1491,6 +1539,8 @@ def test(phase):
         model = Phase23(pretrained=False)
     elif phase == 24:
         model = Phase24(pretrained=False)
+    elif phase == 25:
+        model = Phase25(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -1528,7 +1578,7 @@ def test(phase):
     if hasattr(model, "view_attention"):
         print(f"View Attention Gradient: {model.view_attention.weight.grad.norm().item()}")
 
-    if phase in (4, 5, 7, 10, 16, 17, 18, 19, 20, 21):
+    if phase in (4, 5, 7, 10, 16, 17, 18, 19, 20, 21, 25):
         gradient = model.transformer.layers[0].self_attn.in_proj_weight.grad
         print(f"Transformer Gradient: {gradient.norm().item()}")
     elif phase in (6, 8, 9, 11):
@@ -1572,4 +1622,4 @@ def test(phase):
 
 
 if __name__ == "__main__":
-    test(phase=24)
+    test(phase=25)

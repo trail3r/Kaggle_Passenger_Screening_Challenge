@@ -42,6 +42,7 @@ from src.model import Phase21
 from src.model import Phase22
 from src.model import Phase23
 from src.model import Phase24
+from src.model import Phase25
 
 DATA_DIRECTORY = Path("data")
 DATASET = Path("data/splits/dataset.csv")
@@ -119,6 +120,8 @@ def main(phase):
         model = Phase23(pretrained=False)
     elif phase == 24:
         model = Phase24(pretrained=False)
+    elif phase == 25:
+        model = Phase25(pretrained=False)
     else:
         raise ValueError(f"Unsupported Phase: We don't have Phase{phase}, please check the valid phase.")
 
@@ -314,4 +317,4 @@ def main(phase):
 
 
 if __name__ == "__main__":
-    main(phase=24)
+    main(phase=25)
