@@ -28,6 +28,7 @@ data/manifests/*
 data/splits/*
 !data/manifests/.gitkeep
 !data/splits/.gitkeep
+temp/
 
 # Scanner data copied outside the data directory
 *.aps
